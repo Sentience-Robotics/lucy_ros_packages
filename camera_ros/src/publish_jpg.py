@@ -3,6 +3,7 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo, CompressedImage
+from std_srvs.srv import SetBool
 from cv_bridge import CvBridge
 import cv2
 import signal
@@ -30,9 +31,18 @@ class CameraPublisher(Node):
         # self.pub = self.create_publisher(Image, 'camera/mobius/raw', 10)
         self.jpg_pub = self.create_publisher(CompressedImage, 'camera/mobius/jpg', 10)
         self.bridge = CvBridge()
+        self.active = False
         self.init_cap()
         self.timer = self.create_timer(1/FPS, self.publish_frame)
+        self.enable_srv = self.create_service(SetBool, 'camera/mobius/enable', self.set_active)
         self.get_logger().info("Camera publisher node started.")
+
+    def set_active(self, request, response):
+        self.active = request.data
+        response.success = True
+        response.message = f"Camera {'enabled' if self.active else 'disabled'}"
+        self.get_logger().info(response.message)
+        return response
 
     def init_cap(self):
         # self.cap = cv2.VideoCapture(GST_PIPELINE, cv2.CAP_GSTREAMER)
@@ -49,6 +59,8 @@ class CameraPublisher(Node):
             self.get_logger().info(f"Camera opened successfully at {CAMERA_ENDPOINT}")
     
     def publish_frame(self):
+        if not self.active:
+            return
         ret, frame = self.cap.read()
         if not ret or frame is None:
             self.get_logger().warn("Frame empty, reconnecting camera...")
