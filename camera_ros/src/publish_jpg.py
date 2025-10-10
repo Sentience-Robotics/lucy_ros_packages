@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo, CompressedImage
 from std_srvs.srv import SetBool
+from std_msgs.msg import Int32
 from cv_bridge import CvBridge
 import cv2
 import signal
@@ -36,6 +37,35 @@ class CameraPublisher(Node):
         self.timer = self.create_timer(1/FPS, self.publish_frame)
         self.enable_srv = self.create_service(SetBool, 'camera/mobius/enable', self.set_active)
         self.get_logger().info("Camera publisher node started.")
+        
+        # Pausing camera when no more ros bridge clients
+        self.cli = self.create_client(SetBool, 'camera/mobius/enable')
+        while not self.cli.wait_for_service(timeout_sec=10.0):
+            self.get_logger().warn('Waiting for camera/mobius/enable service...')
+        self.create_subscription(Int32, '/client_count', self.client_count_callback, 10)
+
+    def client_count_callback(self, msg):
+        count = msg.data
+
+        if count == 0:
+            self.get_logger().info('No clients detected — pausing camera.')
+            self.pause_camera()
+
+    def pause_camera(self):
+        req = SetBool.Request()
+        req.data = False
+        future = self.cli.call_async(req)
+        future.add_done_callback(self.service_response_callback)
+
+    def service_response_callback(self, future):
+        try:
+            response = future.result()
+            if response.success:
+                self.get_logger().info(f"Camera paused successfully: {response.message}")
+            else:
+                self.get_logger().warn(f"Camera pause failed: {response.message}")
+        except Exception as e:
+            self.get_logger().error(f"Service call failed: {e}")
 
     def set_active(self, request, response):
         self.active = request.data
