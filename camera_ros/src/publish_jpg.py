@@ -2,29 +2,23 @@
 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image, CameraInfo, CompressedImage
+from sensor_msgs.msg import CompressedImage
 from std_srvs.srv import SetBool
 from std_msgs.msg import Int32
 from cv_bridge import CvBridge
 import cv2
-import signal
-import sys
 
 FPS = 10.0
-CAMERA_RESOLUTION = (640, 480)
+CAMERA_RESOLUTION = (1280, 720)
 CAMERA_ENDPOINT = '/dev/video0'
 
-# Trying to get hardware acceleration with GStreamer (NVIDIA Jetson) - not working yet
-# GST_PIPELINE = (
-#     "v4l2src device=/dev/video0 ! "
-#     "image/jpeg,width=1280,height=720,framerate=30/1 ! "
-#     "nvjpegdec ! "
-#     "nvvidconv ! "
-#     "video/x-raw,format=BGRx ! "
-#     "videoconvert ! "
-#     "video/x-raw,format=BGR ! "
-#     "appsink drop=true"
-# )
+# GStreamer pipeline: native camera MJPEG -> raw JPEG
+GST_PIPELINE = (
+    "v4l2src device=/dev/video0 ! "
+    "image/jpeg,width=1280,height=720,framerate=30/1 ! "
+    "jpegparse ! "
+    "appsink drop=true emit-signals=true sync=false"
+)
 
 class CameraPublisher(Node):
     def __init__(self):
@@ -75,18 +69,26 @@ class CameraPublisher(Node):
         return response
 
     def init_cap(self):
-        # self.cap = cv2.VideoCapture(GST_PIPELINE, cv2.CAP_GSTREAMER)
-
-        self.cap = cv2.VideoCapture(CAMERA_ENDPOINT)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_RESOLUTION[0])
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_RESOLUTION[1])
-        self.cap.set(cv2.CAP_PROP_FPS, FPS)
-        # self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        self.cap = cv2.VideoCapture(GST_PIPELINE, cv2.CAP_GSTREAMER)
         
         if not self.cap.isOpened():
-            self.get_logger().error(f"Failed to open camera at {CAMERA_ENDPOINT}")
+            self.get_logger().error(f"Failed to open camera with GStreamer pipeline")
+            # Fallback to direct camera access if GStreamer fails
+            self.get_logger().info("Falling back to direct camera access...")
+            self.cap = cv2.VideoCapture(CAMERA_ENDPOINT)
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_RESOLUTION[0])
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_RESOLUTION[1])
+            self.cap.set(cv2.CAP_PROP_FPS, FPS)
+            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            self._using_gstreamer = False
+            
+            if not self.cap.isOpened():
+                self.get_logger().error(f"Failed to open camera at {CAMERA_ENDPOINT}")
+            else:
+                self.get_logger().info(f"Camera opened successfully with fallback method")
         else:
-            self.get_logger().info(f"Camera opened successfully at {CAMERA_ENDPOINT}")
+            self._using_gstreamer = True
+            self.get_logger().info(f"Camera opened successfully with direct MJPEG pipeline (HD quality, ZERO transcoding)")
     
     def publish_frame(self):
         if not self.active:
@@ -98,20 +100,24 @@ class CameraPublisher(Node):
             self.init_cap()
             return
 
-        # Raw image
-        # msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
-        # self.pub.publish(msg)
+        # Check if we're using GStreamer pipeline
+        if hasattr(self, '_using_gstreamer') and self._using_gstreamer:
+            # already raw JPEG data from direct MJPEG pipeline
+            msg = CompressedImage()
+            msg.format = 'jpeg'
+            msg.data = frame.tobytes()
+            self.jpg_pub.publish(msg)
+        else:
+            # Fallback: encode as JPEG (CPU intensive - only used if GStreamer fails)
+            ret, jpg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            if not ret:
+                self.get_logger().warn("Failed to encode frame as JPEG.")
+                return
 
-        # Encode as JPEG
-        ret, jpg = cv2.imencode('.jpg', frame)
-        if not ret:
-            self.get_logger().warn("Failed to encode frame as JPEG.")
-            return
-
-        msg = CompressedImage()
-        msg.format = 'jpeg'
-        msg.data = jpg.tobytes()
-        self.jpg_pub.publish(msg)
+            msg = CompressedImage()
+            msg.format = 'jpeg'
+            msg.data = jpg.tobytes()
+            self.jpg_pub.publish(msg)
 
 def main(args=None):
     rclpy.init(args=args)
