@@ -3,8 +3,8 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo, CompressedImage
-from std_srvs.srv import SetBool
 from std_msgs.msg import Int32
+from camera_ros.srv import GetInt
 from cv_bridge import CvBridge
 import cv2
 import signal
@@ -35,37 +35,26 @@ class CameraPublisher(Node):
         self.active = False
         self.init_cap()
         self.timer = self.create_timer(1/FPS, self.publish_frame)
-        self.enable_srv = self.create_service(SetBool, 'camera/mobius/enable', self.set_active)
         self.get_logger().info("Camera publisher node started.")
         
         # Pausing camera when no more ros bridge clients
-        self.cli = self.create_client(SetBool, 'camera/mobius/enable')
-        while not self.cli.wait_for_service(timeout_sec=10.0):
-            self.get_logger().warn('Waiting for camera/mobius/enable service...')
         self.create_subscription(Int32, '/client_count', self.client_count_callback, 10)
+        self.client_count = 0
+        self.create_service(GetInt, 'get_client_count', self.get_client_count)
+
+    def get_client_count(self, request, response):
+        response.value = self.client_count
+        return response
 
     def client_count_callback(self, msg):
-        count = msg.data
+        self.client_count = msg.data
 
-        if count == 0:
-            self.get_logger().info('No clients detected — pausing camera.')
-            self.pause_camera()
+        if self.client_count == 0:
+            self.active = False
+        elif self.client_count > 0:
+            self.active = True
 
-    def pause_camera(self):
-        req = SetBool.Request()
-        req.data = False
-        future = self.cli.call_async(req)
-        future.add_done_callback(self.service_response_callback)
-
-    def service_response_callback(self, future):
-        try:
-            response = future.result()
-            if response.success:
-                self.get_logger().info(f"Camera paused successfully: {response.message}")
-            else:
-                self.get_logger().warn(f"Camera pause failed: {response.message}")
-        except Exception as e:
-            self.get_logger().error(f"Service call failed: {e}")
+        self.get_logger().info(f"Client count: {self.client_count}, camera active: {self.active}")
 
     def set_active(self, request, response):
         self.active = request.data
@@ -87,7 +76,7 @@ class CameraPublisher(Node):
             self.get_logger().error(f"Failed to open camera at {CAMERA_ENDPOINT}")
         else:
             self.get_logger().info(f"Camera opened successfully at {CAMERA_ENDPOINT}")
-    
+
     def publish_frame(self):
         if not self.active:
             return
@@ -111,6 +100,7 @@ class CameraPublisher(Node):
         msg = CompressedImage()
         msg.format = 'jpeg'
         msg.data = jpg.tobytes()
+        msg.header.stamp = self.get_clock().now().to_msg()
         self.jpg_pub.publish(msg)
 
 def main(args=None):
@@ -121,4 +111,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-
