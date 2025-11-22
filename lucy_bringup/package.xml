@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>lucy_bringup</name>
+  <version>1.0.0</version>
+  <description>Launch files and scripts for bringing up the Lucy robot system</description>
+  
+  <maintainer email="contact@sentience-robotics.fr">Sentience Robotics Team</maintainer>
+  <license>GPL-3.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>micro_ros_agent</exec_depend>
+  <exec_depend>rosbridge_server</exec_depend>
+  <exec_depend>camera_ros</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
+
