@@ -1,0 +1,14 @@
+<launch>
+    <let name="urdf_path" value="/home/dev/thais_urdf/InMoov/urdf/InMoov.urdf" />
+
+    <node pkg="controller_manager" exec="ros2_control_node">
+        <param name="robot_description" value="$(command 'cat $(var urdf_path)')" />
+        <param from="$(find-pkg-share lucy_ros2_control)/config/lucy_controllers.yaml" />
+    </node>
+
+    <node pkg="controller_manager" exec="spawner" args="joint_state_broadcaster"/>
+
+    <node pkg="controller_manager" exec="spawner" args="left_arm_controller"/>
+
+
+</launch>
