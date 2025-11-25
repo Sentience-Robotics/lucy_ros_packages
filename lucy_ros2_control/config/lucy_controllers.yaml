@@ -7,9 +7,12 @@ controller_manager:
     
     left_arm_controller:
       type: joint_trajectory_controller/JointTrajectoryController
-      joints:
-        - left_thumb_joint
-      command_interfaces:
-        - position
-      state_interfaces:
-        - position
+
+left_arm_controller:
+  ros__parameters:
+    joints:
+      - left_thumb_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
