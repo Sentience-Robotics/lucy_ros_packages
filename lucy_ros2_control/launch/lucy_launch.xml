@@ -10,5 +10,7 @@
 
     <node pkg="controller_manager" exec="spawner" args="left_arm_controller"/>
 
+    <node pkg="controller_manager" exec="spawner" args="right_arm_controller"/>
+
 
 </launch>

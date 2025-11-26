@@ -1,17 +1,26 @@
 controller_manager:
   ros__parameters:
     update_rate: 100
-  
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
-    
     left_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+    right_arm_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
 left_arm_controller:
   ros__parameters:
     joints:
       - left_thumb_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+
+right_arm_controller:
+  ros__parameters:
+    joints:
+      - right_thumb_joint
     command_interfaces:
       - position
     state_interfaces:
