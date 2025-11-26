@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "ros2_control_demo_example_2/diffbot_system.hpp"
+#include "include/lucy_system.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -25,7 +25,6 @@
 
 #include "hardware_interface/lexical_casts.hpp"
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
-#include "rclcpp/rclcpp.hpp"
 
 namespace ros2_control_demo_example_2
 {
@@ -33,11 +32,14 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
   const hardware_interface::HardwareInfo & info)
 {
   if (
-    hardware_interface::SystemInterface::on_init(params) !=
+    hardware_interface::SystemInterface::on_init(info) !=
     hardware_interface::CallbackReturn::SUCCESS)
   {
     return hardware_interface::CallbackReturn::ERROR;
   }
+
+  logger_ = std::make_shared<rclcpp::Logger>(
+    rclcpp::get_logger("controller_manager.resource_manager.hardware_component.system.LucySystemHardware"));
 
   // resizing command and state vectors
   hw_positions_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
@@ -87,7 +89,7 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
   // Création du publisher sur uptime_publisher
   joint_publisher_ = node_->create_publisher<sensor_msgs::msg::JointState>("joints/left_arm", 10);
 
-  RCLCPP_INFO(rclcpp::get_logger("HandHardwareInterface"),
+  RCLCPP_INFO(get_logger(),
               "Publisher uptime_publisher initialized");
 
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -155,29 +157,14 @@ hardware_interface::CallbackReturn LucySystemHardware::on_deactivate(
 }
 
 hardware_interface::return_type LucySystemHardware::read(
-  const rclcpp::Time & /*time*/, const rclcpp::Duration & period)
+  const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
-  // BEGIN: This part here is for exemplary purposes - Please do not copy to your production code
-  std::stringstream ss;
-  ss << "Reading states:";
-  ss << std::fixed << std::setprecision(2);
-  for (const auto & [name, descr] : joint_state_interfaces_)
+  // Updating the position of each joint from the command
+  for (std::size_t i = 0; i < hw_commands_.size(); i++)
   {
-    if (descr.get_interface_name() == hardware_interface::HW_IF_POSITION)
-    {
-      // Simulate DiffBot wheels's movement as a first-order system
-      // Update the joint status: this is a revolute joint without any limit.
-      // Simply integrates
-      auto velo = get_command(descr.get_prefix_name() + "/" + hardware_interface::HW_IF_VELOCITY);
-      set_state(name, get_state(name) + period.seconds() * velo);
-
-      ss << std::endl
-         << "\t position " << get_state(name) << " and velocity " << velo << " for '" << name
-         << "'!";
-    }
+    // No encoder for our servos, we assume that the position is always reached
+    hw_positions_[i] = hw_commands_[i];
   }
-  RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500, "%s", ss.str().c_str());
-  // END: This part here is for exemplary purposes - Please do not copy to your production code
 
   return hardware_interface::return_type::OK;
 }
@@ -185,20 +172,13 @@ hardware_interface::return_type LucySystemHardware::read(
 hardware_interface::return_type ros2_control_demo_example_2 ::LucySystemHardware::write(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
-  // BEGIN: This part here is for exemplary purposes - Please do not copy to your production code
-  std::stringstream ss;
-  ss << "Writing commands:";
-  for (const auto & [name, descr] : joint_command_interfaces_)
-  {
-    // Simulate sending commands to the hardware
-    set_state(name, get_command(name));
+  // Publish the joint states
 
-    ss << std::fixed << std::setprecision(2) << std::endl
-       << "\t" << "command " << get_command(name) << " for '" << name << "'!";
-  }
-  RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500, "%s", ss.str().c_str());
-  // END: This part here is for exemplary purposes - Please do not copy to your production code
-
+  // testing log
+  RCLCPP_INFO(
+  get_logger(),
+  "\033[1;31mCalling write function.\033[0m"
+);
   return hardware_interface::return_type::OK;
 }
 

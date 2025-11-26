@@ -23,12 +23,16 @@
 #include "hardware_interface/hardware_info.hpp"
 #include "hardware_interface/system_interface.hpp"
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
+#include "rclcpp/rclcpp.hpp"
+#include "rclcpp/publisher.hpp"
 #include "rclcpp/clock.hpp"
+#include "rclcpp/logger.hpp"
 #include "rclcpp/duration.hpp"
 #include "rclcpp/macros.hpp"
 #include "rclcpp/time.hpp"
 #include "rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp"
 #include "rclcpp_lifecycle/state.hpp"
+#include <sensor_msgs/msg/joint_state.hpp>
 
 namespace ros2_control_demo_example_2
 {
@@ -55,9 +59,16 @@ public:
 
   hardware_interface::return_type write(
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
+
+  rclcpp::Logger get_logger() const { return *logger_; }
+  // rclcpp::Clock::SharedPtr get_clock() const { return clock_; }
 private:
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_publisher_;
     rclcpp::Node::SharedPtr node_;
+
+    // Objects for logging
+    std::shared_ptr<rclcpp::Logger> logger_;
+    // rclcpp::Clock::SharedPtr clock_;
 
     // Store the command for the simulated robot
     std::vector<double> hw_commands_;
