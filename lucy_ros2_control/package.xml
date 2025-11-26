@@ -4,7 +4,7 @@
   <name>lucy_ros2_control</name>
   <version>1.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="dev@todo.todo">dev</maintainer>
+  <maintainer email="samuel.bruschet@epitech.eu">Samuel Bruschet</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
