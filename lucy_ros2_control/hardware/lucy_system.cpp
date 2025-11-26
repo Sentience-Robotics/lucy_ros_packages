@@ -39,12 +39,12 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
   }
 
   logger_ = std::make_shared<rclcpp::Logger>(
-    rclcpp::get_logger("controller_manager.resource_manager.hardware_component.system.LucySystemHardware"));
+    rclcpp::get_logger(("controller_manager.resource_manager.hardware_component.system." + info_.name).c_str()));
 
   // resizing command and state vectors
-  hw_positions_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
+  hw_positions_.resize(info_.joints.size(), 0);
   // hw_velocities_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN()); // no velocities for our servos
-  hw_commands_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
+  hw_commands_.resize(info_.joints.size(), 0);
 
   for (const hardware_interface::ComponentInfo & joint : info_.joints)
   {
@@ -87,7 +87,7 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
   node_ = std::make_shared<rclcpp::Node>("lucy_hardware_interface");
 
   // Création du publisher sur uptime_publisher
-  joint_publisher_ = node_->create_publisher<sensor_msgs::msg::JointState>("joints/left_arm", 10);
+  joint_publisher_ = node_->create_publisher<sensor_msgs::msg::JointState>(info_.hardware_parameters["publisher_topic"], 10);
 
   RCLCPP_INFO(get_logger(),
               "Publisher uptime_publisher initialized");
@@ -165,6 +165,10 @@ hardware_interface::return_type LucySystemHardware::read(
     // No encoder for our servos, we assume that the position is always reached
     hw_positions_[i] = hw_commands_[i];
   }
+  // RCLCPP_INFO(
+  // get_logger(),
+  // "\033[1;31mCalling read function.\033[0m"
+  // );
 
   return hardware_interface::return_type::OK;
 }
@@ -173,12 +177,24 @@ hardware_interface::return_type ros2_control_demo_example_2 ::LucySystemHardware
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
   // Publish the joint states
+  // sensor_msgs::msg::JointState msg;
+
+  // msg.name = {"left_thumb_joint"};
+  // msg.position = hw_commands;
+
+  // joint_publisher_->publish(msg);
+
+  
+  if (!hw_commands_.empty()) {
+    RCLCPP_INFO(get_logger(), "hw_commands_[0] = %f", hw_commands_[0]);
+  }
+
 
   // testing log
-  RCLCPP_INFO(
-  get_logger(),
-  "\033[1;31mCalling write function.\033[0m"
-);
+  // RCLCPP_INFO(
+  // get_logger(),
+  // "\033[1;31mCalling write function.\033[0m"
+// );
   return hardware_interface::return_type::OK;
 }
 
