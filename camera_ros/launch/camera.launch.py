@@ -28,7 +28,7 @@ def generate_launch_description():
     # Launch arguments
     fps_arg = DeclareLaunchArgument(
         'fps',
-        default_value='15.0',
+        default_value='10.0',
         description='Camera frame rate (1.0-30.0 FPS)'
     )
 
