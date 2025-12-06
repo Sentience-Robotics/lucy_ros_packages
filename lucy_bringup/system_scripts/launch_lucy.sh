@@ -87,6 +87,7 @@ tmux send-keys -t $SESSION_NAME:0.0 "clear" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "echo '========================================'" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "echo '🤖 ROS2 System Nodes'" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "echo '========================================'" C-m
+tmux send-keys -t $SESSION_NAME:0.0 "echo 'Note: Audio underrun warnings are normal when no audio is published'" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "sleep 1" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "ros2 launch lucy_bringup lucy.launch.py" C-m
 
@@ -124,6 +125,7 @@ tmux send-keys -t $SESSION_NAME:0.2 "echo '  ros2 topic list         # List all 
 tmux send-keys -t $SESSION_NAME:0.2 "echo '  ros2 topic echo /joints/right_arm'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "echo '  ros2 topic echo /joints/left_arm'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "echo '  ros2 topic echo /trace_publisher'" C-m
+tmux send-keys -t $SESSION_NAME:0.2 "echo '  ros2 topic hz /audio     # Audio topic rate'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "echo ''" C-m
 
 # Select the ROS pane as default

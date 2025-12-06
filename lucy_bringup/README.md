@@ -8,6 +8,7 @@ This package provides a unified way to launch all components of the Lucy robot s
 - Two micro-ROS agents (for RP2040 controllers on left and right arms)
 - ROSBridge WebSocket server (for web interface communication)
 - Camera publisher node (for vision system)
+- Audio capture and playback nodes (for stereo microphones and speakers)
 - Web control panel interface
 
 ## Quick Start
@@ -48,7 +49,9 @@ ros2 launch lucy_bringup lucy.launch.py device0:=/dev/ttyACM2 device1:=/dev/ttyA
 │  ├─ micro_ros_agent_right                                   │
 │  ├─ micro_ros_agent_left                                    │
 │  ├─ rosbridge_server                                        │
-│  └─ camera_publisher                                        │
+│  ├─ camera_publisher                                        │
+│  ├─ audio_capturer_node                                     │
+│  └─ audio_player_node                                       │
 ├──────┬──────────────────────────────────────────────────────┤
 │ Web  │ Pane 2: Debug Terminal                               │
 │ ~12% │ ~88%                                                 │
@@ -79,6 +82,11 @@ The `lucy.launch.py` file accepts the following arguments:
 - `device1` - Serial device for left arm (default: `/dev/ttyACM1`)
 - `camera_device` - Camera device path (default: `/dev/video0`)
 - `camera_fps` - Camera frame rate (default: `15.0`)
+
+Audio launch arguments (passed to `audio.launch.py`):
+- `sample_rate` - Audio sample rate in Hz (default: `48000`)
+- `capture_device` - Audio capture device index (default: `-1` for default)
+- `playback_device` - Audio playback device index (default: `-1` for default)
 
 ## System Requirements
 
@@ -119,7 +127,20 @@ ros2 topic list
 # Echo joint commands
 ros2 topic echo /joints/right_arm
 ros2 topic echo /joints/left_arm
+
+# Check audio topics
+ros2 topic echo /audio
+ros2 topic hz /audio
 ```
+
+### Audio Underrun Warnings
+
+**Note:** PortAudio underrun warnings are **normal and expected** when:
+- No audio is being published to `/audio` topic
+- Audio source stops temporarily
+- System is idle
+
+These are informational warnings, not errors. The system continues to function normally. You can safely ignore them. They will stop when audio data starts flowing again.
 
 ## Files
 
