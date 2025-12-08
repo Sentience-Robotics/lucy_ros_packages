@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2024 Sentience Robotics Team
+# Copyright 2025 Sentience Robotics Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,8 +20,8 @@ Launch file for Lucy Robot System.
 This launch file starts all core ROS2 components:
 - Two micro-ROS agents (for left and right arm RP2040 controllers)
 - ROSBridge WebSocket server (for web interface communication)
-- Camera publisher node (for vision system)
 - Audio capture and playback nodes (for stereo microphones and speakers)
+- RealSense D435i camera (for vision system with depth sensing)
 
 Optimized for NVIDIA Jetson AGX Orin.
 """
@@ -110,18 +110,6 @@ def generate_launch_description():
         description='Serial device for second micro-ROS agent (left arm)'
     )
     
-    camera_device_arg = DeclareLaunchArgument(
-        'camera_device',
-        default_value='/dev/video0',
-        description='Camera device path'
-    )
-    
-    camera_fps_arg = DeclareLaunchArgument(
-        'camera_fps',
-        default_value='15.0',
-        description='Camera frame rate (1.0-30.0 FPS)'
-    )
-    
     # Audio launch arguments
     audio_sample_rate_arg = DeclareLaunchArgument(
         'audio_sample_rate',
@@ -139,21 +127,6 @@ def generate_launch_description():
         'audio_playback_device',
         default_value='-1',
         description='Audio playback device index (-1 for default)'
-    )
-    
-    # Include camera subsystem launch file
-    camera_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([
-                FindPackageShare('camera_ros'),
-                'launch',
-                'camera.launch.py'
-            ])
-        ]),
-        launch_arguments={
-            'fps': LaunchConfiguration('camera_fps'),
-            'device': LaunchConfiguration('camera_device'),
-        }.items()
     )
     
     # Create subsystem nodes using helper functions
@@ -175,12 +148,21 @@ def generate_launch_description():
         shell=True
     )
     
+    # Node 4: RealSense D435i Camera (replaces camera_ros)
+    realsense_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('lucy_bringup'),
+                'launch',
+                'realsense.launch.py'
+            ])
+        ])
+    )
+    
     return LaunchDescription([
         # Launch arguments
         device0_arg,
         device1_arg,
-        camera_device_arg,
-        camera_fps_arg,
         audio_sample_rate_arg,
         audio_capture_device_arg,
         audio_playback_device_arg,
@@ -194,15 +176,15 @@ def generate_launch_description():
         # Launch all subsystems
         *micro_ros_nodes,  # Unpack micro-ROS nodes
         rosbridge_server,
-        camera_launch,
         *audio_nodes,  # Unpack audio nodes
+        realsense_launch,  # RealSense D435i camera
         
         # Success message
         LogInfo(msg='✅ All ROS nodes launched successfully!'),
         LogInfo(msg='   - Micro-ROS Agents: right & left arm'),
         LogInfo(msg='   - ROSBridge Server: WebSocket ready'),
-        LogInfo(msg='   - Camera Publisher: Vision system active'),
         LogInfo(msg='   - Audio System: Capture & playback ready'),
+        LogInfo(msg='   - RealSense D435i: Vision system active'),
         LogInfo(msg='========================================'),
     ])
 
