@@ -7,8 +7,8 @@ System launch files and scripts for the Lucy robot on NVIDIA Jetson AGX Orin.
 This package provides a unified way to launch all components of the Lucy robot system:
 - Two micro-ROS agents (for RP2040 controllers on left and right arms)
 - ROSBridge WebSocket server (for web interface communication)
-- Camera publisher node (for vision system)
 - Audio capture and playback nodes (for stereo microphones and speakers)
+- Intel RealSense D435i camera (for vision system with depth sensing)
 - Web control panel interface
 
 ## Quick Start
@@ -49,9 +49,9 @@ ros2 launch lucy_bringup lucy.launch.py device0:=/dev/ttyACM2 device1:=/dev/ttyA
 │  ├─ micro_ros_agent_right                                   │
 │  ├─ micro_ros_agent_left                                    │
 │  ├─ rosbridge_server                                        │
-│  ├─ camera_publisher                                        │
 │  ├─ audio_capturer_node                                     │
 │  └─ audio_player_node                                       │
+│  └─ realsense2_camera                                       │
 ├──────┬──────────────────────────────────────────────────────┤
 │ Web  │ Pane 2: Debug Terminal                               │
 │ ~12% │ ~88%                                                 │
@@ -80,8 +80,7 @@ The `lucy.launch.py` file accepts the following arguments:
 
 - `device0` - Serial device for right arm (default: `/dev/ttyACM0`)
 - `device1` - Serial device for left arm (default: `/dev/ttyACM1`)
-- `camera_device` - Camera device path (default: `/dev/video0`)
-- `camera_fps` - Camera frame rate (default: `15.0`)
+- `realsense_serial` - RealSense camera serial number (default: `''` = auto-detect)
 
 Audio launch arguments (passed to `audio.launch.py`):
 - `sample_rate` - Audio sample rate in Hz (default: `48000`)
@@ -94,7 +93,7 @@ Audio launch arguments (passed to `audio.launch.py`):
 - ROS2 Humble
 - tmux
 - Two RP2040 controllers connected via USB
-- Camera device
+- Intel RealSense D435i camera (see [REALSENSE.md](REALSENSE.md) for details)
 
 ## Troubleshooting
 
@@ -147,14 +146,16 @@ These are informational warnings, not errors. The system continues to function n
 ```
 lucy_bringup/
 ├── launch/
-│   └── lucy.launch.py          # Main ROS2 launch file
+│   ├── lucy.launch.py          # Main ROS2 launch file
+│   └── realsense.launch.py     # RealSense D435i camera launch file
 ├── system_scripts/
 │   ├── launch_lucy.sh          # tmux launcher
 │   ├── stop_lucy.sh            # Graceful shutdown
 │   └── check_lucy.sh           # Health check
 ├── CMakeLists.txt
 ├── package.xml
-└── README.md
+├── README.md                    # This file
+└── REALSENSE.md                # RealSense D435i integration documentation
 ```
 
 ## Symlinks
@@ -164,9 +165,24 @@ For convenience, symlinks are created in `/home/dev/`:
 - `~/stop_lucy.sh` → `lucy_ws/src/lucy_ros_packages/lucy_bringup/system_scripts/stop_lucy.sh`
 - `~/check_lucy.sh` → `lucy_ws/src/lucy_ros_packages/lucy_bringup/system_scripts/check_lucy.sh`
 
+## Camera System
+
+The Lucy robot uses an **Intel RealSense D435i** stereo depth camera for vision and depth sensing.
+
+**Key Features:**
+- Color stream: 1920x1080 @ 30fps
+- Depth stream: 1280x720 @ 30fps
+- Aligned depth-to-color images
+- IMU data (accelerometer + gyroscope @ 400Hz)
+- Spatial and temporal filters for depth quality
+
+**Topics:** All camera topics are published under `/realsense/` namespace.
+
+For complete documentation, installation instructions, troubleshooting, and usage examples, see **[REALSENSE.md](REALSENSE.md)**.
+
 ## License
 
 GPL-3.0 - See LICENSE file for details.
 
-Copyright 2024 Sentience Robotics Team
+Copyright 2025 Sentience Robotics Team
 
