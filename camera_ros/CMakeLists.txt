@@ -25,6 +25,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 # Install Python scripts
 install(PROGRAMS
   scripts/camera_publisher.py
+  scripts/camera_stream_controller.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -54,7 +55,32 @@ install(FILES
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
   ament_lint_auto_find_test_dependencies()
+
+  # Install test files
+  install(DIRECTORY test
+    DESTINATION share/${PROJECT_NAME}
+  )
+
+  # Install pytest.ini for coverage configuration
+  install(FILES
+    pytest.ini
+    DESTINATION share/${PROJECT_NAME}
+  )
+
+  # Add pytest tests with coverage
+  ament_add_pytest_test(test_camera_publisher test/test_camera_publisher.py
+    TIMEOUT 60
+    PYTHON_EXECUTABLE "${PYTHON3_EXECUTABLE}"
+    APPEND_ENV PYTHONPATH="${CMAKE_CURRENT_SOURCE_DIR}/scripts:${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+
+  ament_add_pytest_test(test_camera_stream_controller test/test_camera_stream_controller.py
+    TIMEOUT 60
+    PYTHON_EXECUTABLE "${PYTHON3_EXECUTABLE}"
+    APPEND_ENV PYTHONPATH="${CMAKE_CURRENT_SOURCE_DIR}/scripts:${CMAKE_CURRENT_SOURCE_DIR}"
+  )
 endif()
 
 # Export the generated interfaces

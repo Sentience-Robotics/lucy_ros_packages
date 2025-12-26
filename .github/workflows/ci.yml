@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    container:
+      image: osrf/ros:humble-desktop
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          apt-get update && apt-get install -y \
+            python3-pip \
+            python3-pytest \
+            python3-pytest-mock \
+            python3-opencv \
+            gstreamer1.0-tools \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly \
+            v4l-utils \
+            build-essential \
+            cmake \
+            git \
+            && rm -rf /var/lib/apt/lists/*
+      
+      - name: Setup workspace structure
+        run: |
+          mkdir -p ws/src
+          cp -r camera_ros lucy_bringup ws/src/
+      
+      - name: Build workspace
+        working-directory: /__w/lucy_ros_packages/lucy_ros_packages/ws
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build --packages-select camera_ros lucy_bringup --cmake-args -DBUILD_TESTING=ON
+      
+      - name: Run linters
+        working-directory: /__w/lucy_ros_packages/lucy_ros_packages/ws
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          colcon test --packages-select camera_ros lucy_bringup --event-handlers console_direct+ || true
+      
+      - name: Check lint results
+        working-directory: /__w/lucy_ros_packages/lucy_ros_packages/ws
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          colcon test-result --verbose || true
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    container:
+      image: osrf/ros:humble-desktop
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          apt-get update && apt-get install -y \
+            python3-pip \
+            python3-pytest \
+            python3-pytest-mock \
+            python3-opencv \
+            gstreamer1.0-tools \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly \
+            v4l-utils \
+            build-essential \
+            cmake \
+            git \
+            && rm -rf /var/lib/apt/lists/*
+      
+      - name: Install Python test dependencies
+        run: |
+          pip3 install --no-cache-dir pytest pytest-mock pytest-cov
+      
+      - name: Setup workspace structure
+        run: |
+          mkdir -p ws/src
+          cp -r camera_ros lucy_bringup ws/src/
+      
+      - name: Build workspace with tests
+        working-directory: /__w/lucy_ros_packages/lucy_ros_packages/ws
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build --packages-select camera_ros lucy_bringup --cmake-args -DBUILD_TESTING=ON
+      
+      - name: Run unit tests
+        working-directory: /__w/lucy_ros_packages/lucy_ros_packages/ws
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          colcon test --packages-select camera_ros lucy_bringup --event-handlers console_direct+
+      
+      - name: Check test results
+        working-directory: /__w/lucy_ros_packages/lucy_ros_packages/ws
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          colcon test-result --verbose
+          # Fail if any tests failed
+          if colcon test-result --verbose | grep -q "failed"; then
+            echo "Some tests failed!"
+            exit 1
+          fi
+      
+      - name: Generate coverage report
+        working-directory: /__w/lucy_ros_packages/lucy_ros_packages/ws
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          cd build/camera_ros
+          python3 -m pytest ../../src/camera_ros/test/ \
+            --cov=../../src/camera_ros/scripts \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html:htmlcov \
+            --cov-report=term-missing \
+            --cov-branch || true
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ${{ github.workspace }}/ws/build/camera_ros/coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+      
+      - name: Upload coverage HTML report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: ${{ github.workspace }}/ws/build/camera_ros/htmlcov/
+          retention-days: 30

@@ -22,6 +22,7 @@ This launch file starts all core ROS2 components:
 - ROSBridge WebSocket server (for web interface communication)
 - Audio capture and playback nodes (for stereo microphones and speakers)
 - RealSense D435i camera (for vision system with depth sensing)
+- External USB webcam (for additional vision stream)
 
 Optimized for NVIDIA Jetson AGX Orin.
 """
@@ -96,59 +97,71 @@ def create_audio_nodes(sample_rate, capture_device, playback_device):
 
 def generate_launch_description():
     """Generate launch description for Lucy robot system."""
-    
+
     # Declare launch arguments for flexibility
     device0_arg = DeclareLaunchArgument(
         'device0',
         default_value='/dev/ttyACM0',
         description='Serial device for first micro-ROS agent (right arm)'
     )
-    
+
     device1_arg = DeclareLaunchArgument(
         'device1',
         default_value='/dev/ttyACM1',
         description='Serial device for second micro-ROS agent (left arm)'
     )
-    
+
     # Audio launch arguments
     audio_sample_rate_arg = DeclareLaunchArgument(
         'audio_sample_rate',
         default_value='48000',
         description='Audio sample rate in Hz (e.g., 44100, 48000)'
     )
-    
+
     audio_capture_device_arg = DeclareLaunchArgument(
         'audio_capture_device',
         default_value='-1',
         description='Audio capture device index (-1 for default)'
     )
-    
+
     audio_playback_device_arg = DeclareLaunchArgument(
         'audio_playback_device',
         default_value='-1',
         description='Audio playback device index (-1 for default)'
     )
-    
+
     # Create subsystem nodes using helper functions
     micro_ros_nodes = create_micro_ros_nodes(
         LaunchConfiguration('device0'),
         LaunchConfiguration('device1')
     )
-    
-    audio_nodes = create_audio_nodes(
-        LaunchConfiguration('audio_sample_rate'),
-        LaunchConfiguration('audio_capture_device'),
-        LaunchConfiguration('audio_playback_device')
-    )
-    
+
+    # Audio nodes are created but currently disabled
+    # audio_nodes = create_audio_nodes(
+    #     LaunchConfiguration('audio_sample_rate'),
+    #     LaunchConfiguration('audio_capture_device'),
+    #     LaunchConfiguration('audio_playback_device')
+    # )
+
     # ROSBridge WebSocket Server (for web interface)
     rosbridge_server = ExecuteProcess(
         cmd=['ros2', 'launch', 'rosbridge_server', 'rosbridge_websocket_launch.xml'],
         output='screen',
         shell=True
     )
-    
-    # Node 4: RealSense D435i Camera (replaces camera_ros)
+
+    # External USB webcam (camera_ros package)
+    camera_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('camera_ros'),
+                'launch',
+                'camera.launch.py'
+            ])
+        ])
+    )
+
+    # RealSense D435i Camera
     realsense_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
@@ -158,7 +171,7 @@ def generate_launch_description():
             ])
         ])
     )
-    
+
     return LaunchDescription([
         # Launch arguments
         device0_arg,
@@ -166,25 +179,26 @@ def generate_launch_description():
         audio_sample_rate_arg,
         audio_capture_device_arg,
         audio_playback_device_arg,
-        
+
         # Startup message
         LogInfo(msg='========================================'),
         LogInfo(msg='🤖 Starting Lucy Robot System...'),
         LogInfo(msg='========================================'),
         LogInfo(msg='Note: Audio underrun warnings are normal when no audio is published'),
-        
+
         # Launch all subsystems
         *micro_ros_nodes,  # Unpack micro-ROS nodes
         rosbridge_server,
-        *audio_nodes,  # Unpack audio nodes
+        # *audio_nodes,  # Unpack audio nodes (currently disabled)
+        camera_launch,  # External USB webcam
         realsense_launch,  # RealSense D435i camera
-        
+
         # Success message
         LogInfo(msg='✅ All ROS nodes launched successfully!'),
         LogInfo(msg='   - Micro-ROS Agents: right & left arm'),
         LogInfo(msg='   - ROSBridge Server: WebSocket ready'),
         LogInfo(msg='   - Audio System: Capture & playback ready'),
+        LogInfo(msg='   - External USB Webcam: Stream ready'),
         LogInfo(msg='   - RealSense D435i: Vision system active'),
         LogInfo(msg='========================================'),
     ])
-

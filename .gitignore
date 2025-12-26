@@ -1,1 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
 .venv
+venv/
+ENV/
+env/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+
+# Test artifacts
+.pytest_cache/
+test_results/
+*.xunit.xml
+.tox/
+.nox/
+
+# ROS2 build artifacts
+install/
+log/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+.DS_Store
+
+# ROS2 specific
+.ros/
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+*.orig

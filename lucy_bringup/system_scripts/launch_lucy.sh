@@ -1,5 +1,5 @@
 #!/usr/bin/zsh
-# Copyright 2024 Sentience Robotics Team
+# Copyright 2025 Sentience Robotics Team
 # Launch script for Lucy Robot System using tmux
 
 set -e  # Exit on error
@@ -83,12 +83,6 @@ tmux resize-pane -t $SESSION_NAME:0.1 -x 20
 # ============================================
 echo -e "${BLUE}🤖 Setting up ROS2 nodes pane...${NC}"
 tmux send-keys -t $SESSION_NAME:0.0 "source $WORKSPACE/install/setup.zsh" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "clear" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "echo '========================================'" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "echo '🤖 ROS2 System Nodes'" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "echo '========================================'" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "echo 'Note: Audio underrun warnings are normal when no audio is published'" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "sleep 1" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "ros2 launch lucy_bringup lucy.launch.py" C-m
 
 # ============================================
@@ -97,12 +91,8 @@ tmux send-keys -t $SESSION_NAME:0.0 "ros2 launch lucy_bringup lucy.launch.py" C-
 if [ "$WEB_AVAILABLE" = true ]; then
     echo -e "${BLUE}🌐 Setting up web interface pane...${NC}"
     tmux send-keys -t $SESSION_NAME:0.1 "cd $WEB_DIR" C-m
-    tmux send-keys -t $SESSION_NAME:0.1 "clear" C-m
-    tmux send-keys -t $SESSION_NAME:0.1 "echo '========================================'" C-m
-    tmux send-keys -t $SESSION_NAME:0.1 "echo '🌐 Web Interface'" C-m
-    tmux send-keys -t $SESSION_NAME:0.1 "echo '========================================'" C-m
-    tmux send-keys -t $SESSION_NAME:0.1 "sleep 2" C-m
-    tmux send-keys -t $SESSION_NAME:0.1 "yarn dev" C-m
+    tmux send-keys -t $SESSION_NAME:0.1 "yarn dev --host" C-m
+
 else
     tmux send-keys -t $SESSION_NAME:0.1 "clear" C-m
     tmux send-keys -t $SESSION_NAME:0.1 "echo '⚠️  Web interface directory not found'" C-m
@@ -115,18 +105,6 @@ fi
 echo -e "${BLUE}📟 Setting up debug terminal pane...${NC}"
 tmux send-keys -t $SESSION_NAME:0.2 "source $WORKSPACE/install/setup.zsh" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "clear" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo '========================================'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo '📟 Debug Terminal'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo '========================================'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo ''" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo 'Useful commands:'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo '  ros2 node list          # List all nodes'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo '  ros2 topic list         # List all topics'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo '  ros2 topic echo /joints/right_arm'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo '  ros2 topic echo /joints/left_arm'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo '  ros2 topic echo /trace_publisher'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo '  ros2 topic hz /audio     # Audio topic rate'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo ''" C-m
 
 # Select the ROS pane as default
 tmux select-pane -t $SESSION_NAME:0.0

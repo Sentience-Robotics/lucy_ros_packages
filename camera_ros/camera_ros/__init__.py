@@ -16,6 +16,7 @@
 """
 Camera ROS Package.
 
-Zero-copy MJPEG camera publisher optimized for NVIDIA Jetson AGX Orin."""
+Zero-copy MJPEG camera publisher optimized for NVIDIA Jetson AGX Orin.
+"""
 
 __version__ = "1.0.0"
