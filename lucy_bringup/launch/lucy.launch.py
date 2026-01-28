@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2024 Sentience Robotics Team
+# Copyright 2025 Sentience Robotics Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,15 +20,78 @@ Launch file for Lucy Robot System.
 This launch file starts all core ROS2 components:
 - Two micro-ROS agents (for left and right arm RP2040 controllers)
 - ROSBridge WebSocket server (for web interface communication)
-- Camera publisher node (for vision system)
+- Audio capture and playback nodes (for stereo microphones and speakers)
+- RealSense D435i camera (for vision system with depth sensing)
 
 Optimized for NVIDIA Jetson AGX Orin.
 """
 
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument, LogInfo, ExecuteProcess
-from launch.substitutions import LaunchConfiguration
+from launch.actions import DeclareLaunchArgument, LogInfo, ExecuteProcess, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.substitutions import FindPackageShare
+
+
+def create_micro_ros_nodes(device0, device1):
+    """Create micro-ROS agent nodes for left and right arms."""
+    return [
+        Node(
+            package='micro_ros_agent',
+            executable='micro_ros_agent',
+            name='micro_ros_agent_right',
+            arguments=['serial', '--dev', device0],
+            output='screen',
+            respawn=True,
+            respawn_delay=2.0,
+            emulate_tty=True
+        ),
+        Node(
+            package='micro_ros_agent',
+            executable='micro_ros_agent',
+            name='micro_ros_agent_left',
+            arguments=['serial', '--dev', device1],
+            output='screen',
+            respawn=True,
+            respawn_delay=2.0,
+            emulate_tty=True
+        )
+    ]
+
+
+def create_audio_nodes(sample_rate, capture_device, playback_device):
+    """Create audio capture and playback nodes."""
+    return [
+        Node(
+            package='audio_common',
+            executable='audio_capturer_node',
+            name='audio_capturer',
+            output='screen',
+            respawn=True,
+            respawn_delay=2.0,
+            parameters=[{
+                'format': 8,  # paInt16 (PortAudio format constant)
+                'channels': 2,  # Stereo microphones
+                'rate': sample_rate,
+                'chunk': 1024,  # Buffer size
+                'device': capture_device,
+                'frame_id': 'audio_capture'
+            }]
+        ),
+        Node(
+            package='audio_common',
+            executable='audio_player_node',
+            name='audio_player',
+            output='screen',
+            respawn=True,
+            respawn_delay=2.0,
+            parameters=[{
+                'channels': 2,  # Stereo speakers
+                'device': playback_device
+            }]
+        )
+    ]
 
 
 def generate_launch_description():
@@ -47,86 +110,81 @@ def generate_launch_description():
         description='Serial device for second micro-ROS agent (left arm)'
     )
     
-    camera_device_arg = DeclareLaunchArgument(
-        'camera_device',
-        default_value='/dev/video0',
-        description='Camera device path'
+    # Audio launch arguments
+    audio_sample_rate_arg = DeclareLaunchArgument(
+        'audio_sample_rate',
+        default_value='48000',
+        description='Audio sample rate in Hz (e.g., 44100, 48000)'
     )
     
-    camera_fps_arg = DeclareLaunchArgument(
-        'camera_fps',
-        default_value='15.0',
-        description='Camera frame rate (1.0-30.0 FPS)'
+    audio_capture_device_arg = DeclareLaunchArgument(
+        'audio_capture_device',
+        default_value='-1',
+        description='Audio capture device index (-1 for default)'
     )
     
-    # Node 1: First Micro-ROS Agent (Right Arm - ACM0)
-    micro_ros_agent_right = Node(
-        package='micro_ros_agent',
-        executable='micro_ros_agent',
-        name='micro_ros_agent_right',
-        arguments=['serial', '--dev', LaunchConfiguration('device0')],
-        output='screen',
-        respawn=True,  # Auto-restart if crashes
-        respawn_delay=2.0,
-        emulate_tty=True
+    audio_playback_device_arg = DeclareLaunchArgument(
+        'audio_playback_device',
+        default_value='-1',
+        description='Audio playback device index (-1 for default)'
     )
     
-    # Node 2: Second Micro-ROS Agent (Left Arm - ACM1)
-    micro_ros_agent_left = Node(
-        package='micro_ros_agent',
-        executable='micro_ros_agent',
-        name='micro_ros_agent_left',
-        arguments=['serial', '--dev', LaunchConfiguration('device1')],
-        output='screen',
-        respawn=True,
-        respawn_delay=2.0,
-        emulate_tty=True
+    # Create subsystem nodes using helper functions
+    micro_ros_nodes = create_micro_ros_nodes(
+        LaunchConfiguration('device0'),
+        LaunchConfiguration('device1')
     )
     
-    # Node 3: ROSBridge WebSocket Server (for web interface)
+    audio_nodes = create_audio_nodes(
+        LaunchConfiguration('audio_sample_rate'),
+        LaunchConfiguration('audio_capture_device'),
+        LaunchConfiguration('audio_playback_device')
+    )
+    
+    # ROSBridge WebSocket Server (for web interface)
     rosbridge_server = ExecuteProcess(
         cmd=['ros2', 'launch', 'rosbridge_server', 'rosbridge_websocket_launch.xml'],
         output='screen',
         shell=True
     )
     
-    # Node 4: Camera Publisher
-    camera_node = Node(
-        package='camera_ros',
-        executable='camera_publisher.py',
-        name='camera_publisher',
-        output='screen',
-        respawn=True,
-        respawn_delay=2.0,
-        parameters=[{
-            'fps': LaunchConfiguration('camera_fps'),
-            'device': LaunchConfiguration('camera_device'),
-        }]
+    # Node 4: RealSense D435i Camera (replaces camera_ros)
+    realsense_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('lucy_bringup'),
+                'launch',
+                'realsense.launch.py'
+            ])
+        ])
     )
     
     return LaunchDescription([
         # Launch arguments
         device0_arg,
         device1_arg,
-        camera_device_arg,
-        camera_fps_arg,
+        audio_sample_rate_arg,
+        audio_capture_device_arg,
+        audio_playback_device_arg,
         
         # Startup message
         LogInfo(msg='========================================'),
         LogInfo(msg='🤖 Starting Lucy Robot System...'),
         LogInfo(msg='========================================'),
+        LogInfo(msg='Note: Audio underrun warnings are normal when no audio is published'),
         
-        # Launch all nodes
-        micro_ros_agent_right,
-        micro_ros_agent_left,
+        # Launch all subsystems
+        *micro_ros_nodes,  # Unpack micro-ROS nodes
         rosbridge_server,
-        camera_node,
+        *audio_nodes,  # Unpack audio nodes
+        realsense_launch,  # RealSense D435i camera
         
         # Success message
         LogInfo(msg='✅ All ROS nodes launched successfully!'),
         LogInfo(msg='   - Micro-ROS Agents: right & left arm'),
         LogInfo(msg='   - ROSBridge Server: WebSocket ready'),
-        LogInfo(msg='   - Camera Publisher: Vision system active'),
+        LogInfo(msg='   - Audio System: Capture & playback ready'),
+        LogInfo(msg='   - RealSense D435i: Vision system active'),
         LogInfo(msg='========================================'),
     ])
 

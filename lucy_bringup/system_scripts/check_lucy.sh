@@ -63,11 +63,26 @@ else
     echo -e "${RED}❌ Not found${NC}"
 fi
 
+# Check audio nodes
+echo -n "  Audio Capturer:          "
+if ros2 node list 2>/dev/null | grep -q "audio_capturer"; then
+    echo -e "${GREEN}✅ Active${NC}"
+else
+    echo -e "${RED}❌ Not found${NC}"
+fi
+
+echo -n "  Audio Player:            "
+if ros2 node list 2>/dev/null | grep -q "audio_player"; then
+    echo -e "${GREEN}✅ Active${NC}"
+else
+    echo -e "${RED}❌ Not found${NC}"
+fi
+
 echo ""
 echo -e "${BLUE}Key Topics:${NC}"
 
 # Check important topics
-for topic in "/joints/right_arm" "/joints/left_arm" "/trace_publisher" "/camera/mobius/jpg"; do
+for topic in "/joints/right_arm" "/joints/left_arm" "/trace_publisher" "/camera/mobius/jpg" "/audio"; do
     echo -n "  $topic: "
     if ros2 topic list 2>/dev/null | grep -q "$topic"; then
         echo -e "${GREEN}✅ Available${NC}"
