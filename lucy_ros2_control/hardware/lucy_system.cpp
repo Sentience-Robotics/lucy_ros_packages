@@ -39,7 +39,7 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
   }
 
   logger_ = std::make_shared<rclcpp::Logger>(
-    rclcpp::get_logger(("controller_manager.resource_manager.hardware_component.system." + info_.name).c_str()));
+    rclcpp::get_logger((info_.name).c_str()));
 
   // resizing command and state vectors
   hw_positions_.resize(info_.joints.size(), 0);
@@ -86,7 +86,7 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
 
   node_ = std::make_shared<rclcpp::Node>("lucy_hardware_interface");
 
-  // Création du publisher sur uptime_publisher
+  // Creating publisher on uptime_publisher
   joint_publisher_ = node_->create_publisher<sensor_msgs::msg::JointState>(info_.hardware_parameters["publisher_topic"], 10);
 
   RCLCPP_INFO(get_logger(),
@@ -104,9 +104,6 @@ std::vector<hardware_interface::StateInterface> LucySystemHardware::export_state
     state_interfaces.emplace_back(
       hardware_interface::StateInterface(
         info_.joints[i].name, hardware_interface::HW_IF_POSITION, &hw_positions_[i]));
-    // state_interfaces.emplace_back(
-      // hardware_interface::StateInterface(
-        // info_.joints[i].name, hardware_interface::HW_IF_VELOCITY, &hw_velocities_[i])); // No velocity for our servos
   }
 
   return state_interfaces;
@@ -133,16 +130,6 @@ hardware_interface::CallbackReturn LucySystemHardware::on_activate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
 
-  // resetting every positions and commands to 0
-  // for (auto i = 0u; i < hw_positions_.size(); i++)
-  // {
-  //   if (std::isnan(hw_positions_[i]))
-  //   {
-  //     hw_positions_[i] = 0;
-  //     hw_commands_[i] = 0;
-  //   }
-  // }
-
   RCLCPP_INFO(get_logger(), "Successfully activated!");
 
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -165,10 +152,6 @@ hardware_interface::return_type LucySystemHardware::read(
     // No encoder for our servos, we assume that the position is always reached
     hw_positions_[i] = hw_commands_[i];
   }
-  // RCLCPP_INFO(
-  // get_logger(),
-  // "\033[1;31mCalling read function.\033[0m"
-  // );
 
   return hardware_interface::return_type::OK;
 }
@@ -177,24 +160,29 @@ hardware_interface::return_type ros2_control_demo_example_2 ::LucySystemHardware
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
   // Publish the joint states
-  // sensor_msgs::msg::JointState msg;
+  sensor_msgs::msg::JointState msg;
 
-  // msg.name = {"left_thumb_joint"};
-  // msg.position = hw_commands;
+  msg.position = hw_commands_;
 
-  // joint_publisher_->publish(msg);
+  joint_publisher_->publish(msg);
 
-  
+  // printing every angles of our joints
   if (!hw_commands_.empty()) {
-    RCLCPP_INFO(get_logger(), "hw_commands_[0] = %f", hw_commands_[0]);
-  }
+    std::ostringstream oss;
+    oss << "[";
+    size_t max_print = std::min(hw_commands_.size(), static_cast<size_t>(10));
+    for (size_t i = 0; i < max_print; ++i) {
+        oss << hw_commands_[i];
+        if (i != max_print - 1) oss << ", ";
+    }
+    if (hw_commands_.size() > max_print) {
+        oss << ", ...";
+    }
+    oss << "]";
 
+    RCLCPP_INFO(get_logger(), "hw_commands_ = %s", oss.str().c_str());
+}
 
-  // testing log
-  // RCLCPP_INFO(
-  // get_logger(),
-  // "\033[1;31mCalling write function.\033[0m"
-// );
   return hardware_interface::return_type::OK;
 }
 
