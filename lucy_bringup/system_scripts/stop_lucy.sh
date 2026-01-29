@@ -23,6 +23,18 @@ fi
 
 echo -e "${BLUE}📋 Gracefully stopping processes...${NC}"
 
+# Source ROS2 workspace for service calls
+source $HOME/lucy_ws/install/setup.zsh 2>/dev/null || true
+
+# Stop camera streaming via service (with timeout)
+echo -e "${BLUE}  → Stopping camera streaming...${NC}"
+if ros2 service list 2>/dev/null | grep -q "/camera_publisher/stop_streaming"; then
+    timeout 2 ros2 service call /camera_publisher/stop_streaming std_srvs/srv/SetBool "{data: true}" 2>/dev/null || true
+else
+    echo -e "${YELLOW}    ⚠️  Camera service not available${NC}"
+fi
+sleep 1
+
 # Stop ROS nodes (pane 0)
 echo -e "${BLUE}  → Stopping ROS2 nodes...${NC}"
 tmux send-keys -t $SESSION_NAME:0.0 C-c 2>/dev/null || true

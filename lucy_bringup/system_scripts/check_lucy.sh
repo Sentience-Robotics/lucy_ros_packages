@@ -1,5 +1,5 @@
 #!/usr/bin/zsh
-# Copyright 2024 Sentience Robotics Team
+# Copyright 2025 Sentience Robotics Team
 # Health check script for Lucy Robot System
 
 SESSION_NAME="lucy"
@@ -55,9 +55,25 @@ else
     echo -e "${RED}❌ Not found${NC}"
 fi
 
+# Check camera stream controller
+echo -n "  Camera Stream Controller: "
+if ros2 node list 2>/dev/null | grep -q "camera_stream_controller"; then
+    echo -e "${GREEN}✅ Active${NC}"
+else
+    echo -e "${RED}❌ Not found${NC}"
+fi
+
 # Check rosbridge
 echo -n "  ROSBridge Server:        "
 if ros2 node list 2>/dev/null | grep -q "rosbridge"; then
+    echo -e "${GREEN}✅ Active${NC}"
+else
+    echo -e "${RED}❌ Not found${NC}"
+fi
+
+# Check realsense node
+echo -n "  Realsense Camera:         "
+if ros2 node list 2>/dev/null | grep -q "realsense2_camera"; then
     echo -e "${GREEN}✅ Active${NC}"
 else
     echo -e "${RED}❌ Not found${NC}"
@@ -79,10 +95,23 @@ else
 fi
 
 echo ""
+echo -e "${BLUE}Camera Services:${NC}"
+
+# Check camera services
+for service in "/camera_publisher/start_streaming" "/camera_publisher/stop_streaming"; do
+    echo -n "  $service: "
+    if ros2 service list 2>/dev/null | grep -q "$service"; then
+        echo -e "${GREEN}✅ Available${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Not found${NC}"
+    fi
+done
+
+echo ""
 echo -e "${BLUE}Key Topics:${NC}"
 
 # Check important topics
-for topic in "/joints/right_arm" "/joints/left_arm" "/trace_publisher" "/camera/mobius/jpg" "/audio"; do
+for topic in "/joints/right_arm" "/joints/left_arm" "/trace_publisher" "/ext_camera/jpg" "/audio"; do
     echo -n "  $topic: "
     if ros2 topic list 2>/dev/null | grep -q "$topic"; then
         echo -e "${GREEN}✅ Available${NC}"
