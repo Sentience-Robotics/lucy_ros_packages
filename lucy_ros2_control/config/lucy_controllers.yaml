@@ -20,7 +20,15 @@ left_arm_controller:
 right_arm_controller:
   ros__parameters:
     joints:
-      - right_thumb_joint
+      - right_shoulder_yaw
+      - right_shoulder_roll
+      - right_elbow
+      - right_wrist
+      - right_thumb
+      - right_index
+      - right_middle
+      - right_ring
+      - right_pinky
     command_interfaces:
       - position
     state_interfaces:
