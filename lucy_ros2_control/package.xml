@@ -3,9 +3,9 @@
 <package format="3">
   <name>lucy_ros2_control</name>
   <version>1.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="samuel.bruschet@epitech.eu">Samuel Bruschet</maintainer>
-  <license>TODO: License declaration</license>
+  <description>Package that implements the ROS2 Control configuration for Lucy. Includes launch file, YAML Configuration and Hardware Interface for Lucy</description>
+  <maintainer email="contact@sentience-robotics.fr">Sentience Robotics Team</maintainer>
+  <license>GPL-3.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
