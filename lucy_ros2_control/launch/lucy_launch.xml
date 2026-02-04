@@ -1,8 +1,8 @@
 <launch>
-    <let name="urdf_path" value="/home/dev/thais_urdf/InMoov/urdf/InMoov.urdf" />
+    <let name="urdf_path" value="/home/dev/thais_urdf/InMoov/urdf/InMoov.urdf.xacro" />
 
     <node pkg="controller_manager" exec="ros2_control_node" output="screen">
-        <param name="robot_description" value="$(command 'cat $(var urdf_path)')" />
+        <param name="robot_description" value="xacro $(var urdf_path)" />
         <param from="$(find-pkg-share lucy_ros2_control)/config/lucy_controllers.yaml" />
     </node>
 
