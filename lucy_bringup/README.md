@@ -81,11 +81,12 @@ The `lucy.launch.py` file accepts the following arguments:
 - `device0` - Serial device for right arm (default: `/dev/ttyACM0`)
 - `device1` - Serial device for left arm (default: `/dev/ttyACM1`)
 - `realsense_serial` - RealSense camera serial number (default: `''` = auto-detect)
+Audio is always enabled: capturer (→ `/mic_audio`) and player (← `/audio`). See [TESTING.md](TESTING.md) and [CONTROL_PANEL_AUDIO.md](../lucy_ros_api/docs/CONTROL_PANEL_AUDIO.md).
 
-Audio launch arguments (passed to `audio.launch.py`):
-- `sample_rate` - Audio sample rate in Hz (default: `48000`)
-- `capture_device` - Audio capture device index (default: `-1` for default)
-- `playback_device` - Audio playback device index (default: `-1` for default)
+Audio launch arguments:
+- `audio_sample_rate` - Audio sample rate in Hz (default: `48000`)
+- `audio_capture_device` - Audio capture device index (default: `-1` for default)
+- `audio_playback_device` - Audio playback device index (default: `-1` for default)
 
 ## System Requirements
 
@@ -155,6 +156,7 @@ lucy_bringup/
 ├── CMakeLists.txt
 ├── package.xml
 ├── README.md                    # This file
+├── TESTING.md                  # Tests for this repo and audio/generic-interface verification
 └── REALSENSE.md                # RealSense D435i integration documentation
 ```
 

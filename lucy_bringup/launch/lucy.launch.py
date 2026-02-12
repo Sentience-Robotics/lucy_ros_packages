@@ -31,8 +31,9 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument, LogInfo, ExecuteProcess, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.substitutions import FindPackageShare
+from launch.conditions import IfCondition
 
 
 def create_micro_ros_nodes(device0, device1):
@@ -61,8 +62,8 @@ def create_micro_ros_nodes(device0, device1):
     ]
 
 
-def create_audio_nodes(sample_rate, capture_device, playback_device):
-    """Create audio capture and playback nodes."""
+def create_audio_nodes(sample_rate, capture_device, playback_device, capturer_condition=None):
+    """Create audio nodes. Player ←/audio always; capturer →/mic_audio only when capturer_condition is true (default: off, use control panel mic only)."""
     return [
         Node(
             package='audio_common',
@@ -78,7 +79,9 @@ def create_audio_nodes(sample_rate, capture_device, playback_device):
                 'chunk': 1024,  # Buffer size
                 'device': capture_device,
                 'frame_id': 'audio_capture'
-            }]
+            }],
+            remappings=[('audio', '/mic_audio')],
+            condition=capturer_condition,
         ),
         Node(
             package='audio_common',
@@ -90,7 +93,7 @@ def create_audio_nodes(sample_rate, capture_device, playback_device):
             parameters=[{
                 'channels': 2,  # Stereo speakers
                 'device': playback_device
-            }]
+            }],
         )
     ]
 
@@ -130,18 +133,28 @@ def generate_launch_description():
         description='Audio playback device index (-1 for default)'
     )
 
+    robot_mic_enable_arg = DeclareLaunchArgument(
+        'robot_mic_enable',
+        default_value='false',
+        description='When true, start robot audio capturer (→/mic_audio). Default false: only control panel publishes /mic_audio.'
+    )
+
     # Create subsystem nodes using helper functions
     micro_ros_nodes = create_micro_ros_nodes(
         LaunchConfiguration('device0'),
         LaunchConfiguration('device1')
     )
 
-    # Audio nodes are created but currently disabled
-    # audio_nodes = create_audio_nodes(
-    #     LaunchConfiguration('audio_sample_rate'),
-    #     LaunchConfiguration('audio_capture_device'),
-    #     LaunchConfiguration('audio_playback_device')
-    # )
+    # Audio: player ←/audio always; capturer →/mic_audio only when robot_mic_enable:=true (default: panel mic only)
+    robot_mic_condition = IfCondition(
+        PythonExpression(["'", LaunchConfiguration('robot_mic_enable'), "' == 'true'"])
+    )
+    audio_nodes = create_audio_nodes(
+        LaunchConfiguration('audio_sample_rate'),
+        LaunchConfiguration('audio_capture_device'),
+        LaunchConfiguration('audio_playback_device'),
+        capturer_condition=robot_mic_condition,
+    )
 
     # ROSBridge WebSocket Server (for web interface)
     rosbridge_server = ExecuteProcess(
@@ -179,6 +192,7 @@ def generate_launch_description():
         audio_sample_rate_arg,
         audio_capture_device_arg,
         audio_playback_device_arg,
+        robot_mic_enable_arg,
 
         # Startup message
         LogInfo(msg='========================================'),
@@ -189,7 +203,7 @@ def generate_launch_description():
         # Launch all subsystems
         *micro_ros_nodes,  # Unpack micro-ROS nodes
         rosbridge_server,
-        # *audio_nodes,  # Unpack audio nodes (currently disabled)
+        *audio_nodes,  # Player ←/audio; capturer only if robot_mic_enable:=true (default: panel mic only)
         camera_launch,  # External USB webcam
         realsense_launch,  # RealSense D435i camera
 
@@ -197,7 +211,7 @@ def generate_launch_description():
         LogInfo(msg='✅ All ROS nodes launched successfully!'),
         LogInfo(msg='   - Micro-ROS Agents: right & left arm'),
         LogInfo(msg='   - ROSBridge Server: WebSocket ready'),
-        LogInfo(msg='   - Audio System: Capture & playback ready'),
+        LogInfo(msg='   - Audio System: Playback ready; mic from control panel only (robot_mic_enable:=true for robot mic)'),
         LogInfo(msg='   - External USB Webcam: Stream ready'),
         LogInfo(msg='   - RealSense D435i: Vision system active'),
         LogInfo(msg='========================================'),
