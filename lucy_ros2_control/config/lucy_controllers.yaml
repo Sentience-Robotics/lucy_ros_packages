@@ -13,7 +13,7 @@ left_arm_controller:
     joints:
       - left_shoulder_yaw
       - left_shoulder_roll
-      - left_elbow
+      - left_elbow_x_link_joint
       - left_wrist
       - left_thumb
       - left_index
@@ -30,8 +30,8 @@ right_arm_controller:
     joints:
       - right_shoulder_yaw
       - right_shoulder_roll
-      - right_elbow
-      - right_wrist
+      - right_elbow_x_link_joint
+      - rright_wrist_z_link_jointt
       - right_thumb
       - right_index
       - right_middle
