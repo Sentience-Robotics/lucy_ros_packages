@@ -1,17 +1,24 @@
+import os
+
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch_ros.actions import Node
 from launch.substitutions import Command, PathJoinSubstitution
-from ament_index_python.packages import get_package_share_directory
-import os
+from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
+def _get_workspace_relative_paths():
+    """Resolve thais_urdf paths from this launch file's location (workspace/src/.../launch/)."""
+    launch_dir = os.path.dirname(os.path.abspath(__file__))
+    workspace = os.path.normpath(os.path.join(launch_dir, '..', '..', '..', '..'))
+    urdf_path = os.path.join(workspace, 'src', 'thais_urdf', 'inmoov', 'urdf', 'inmoov.urdf.xacro')
+    base_path = os.path.join(workspace, 'src', 'thais_urdf', 'inmoov')
+    return urdf_path, base_path
+
+
 def generate_launch_description():
-    # controllers_yaml = '/home/dev/lucy_ws/src/lucy_ros_packages/lucy_ros2_control/config/lucy_controllers.yaml'
-    # urdf_path = '/home/samuel/sentience/thais_urdf/inmoov/urdf/inmoov.urdf.xacro'
-    urdf_path = '/home/samuel/sentience/local_ws/src/thais_urdf/inmoov/urdf/inmoov.urdf.xacro'
+    urdf_path, base_path = _get_workspace_relative_paths()
     # pkg_gazebo = get_package_share_directory('gazebo_ros')
 
     # Lancement de Gazebo
@@ -61,7 +68,7 @@ def generate_launch_description():
     ])
 
     robot_description_deprecated = {
-    'robot_description': Command(['xacro ', urdf_path])
+        'robot_description': Command(['xacro ', urdf_path, ' base_path:=', base_path])
     }
 
 
@@ -82,7 +89,7 @@ def generate_launch_description():
             package='robot_state_publisher',
             executable='robot_state_publisher',
             output='screen',
-            parameters=[{'robot_description': Command(['xacro ', urdf_path])}]
+            parameters=[{'robot_description': Command(['xacro ', urdf_path, ' base_path:=', base_path])}]
         ),
 
         # ros2_control_node
