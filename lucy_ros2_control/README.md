@@ -1,0 +1,28 @@
+# lucy_ros2_control
+
+ROS 2 Control for Lucy: hardware interface, controller config, and launch file.
+
+## Contents
+
+- **Hardware interface** — `LucySystemHardware` (publishes `/joints/left_arm`, `/joints/right_arm` for micro-controllers).
+- **Config** — `config/lucy_controllers.yaml`.
+- **Launch** — `control.launch.py`: robot_state_publisher + ros2_control_node + spawners.
+
+## Usage
+
+```bash
+ros2 launch lucy_ros2_control control.launch.py
+```
+
+Optional args: `urdf_path:=<path>` `base_path:=<path>` (defaults point to `thais_urdf/inmoov`).
+
+## Real + RViz + rosbridge / Gazebo + RViz + rosbridge
+
+Use the **thais_urdf** package:
+
+- `ros2 launch thais_urdf rviz.launch.py` — real robot + RViz + rosbridge (control panel at ws://localhost:9090).
+- `ros2 launch thais_urdf gazebo.launch.py` — Gazebo sim + RViz + ros2_control (sim) + rosbridge.
+
+## Dependencies
+
+`controller_manager`, `gz_ros2_control`, `ros_gz_sim`, `rosbridge_server`, `rviz2`.
