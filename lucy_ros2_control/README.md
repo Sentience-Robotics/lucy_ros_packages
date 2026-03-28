@@ -8,13 +8,23 @@ ROS 2 Control for Lucy: hardware interface, controller config, and launch file.
 - **Config** — `config/lucy_controllers.yaml`.
 - **Launch** — `control.launch.py`: robot_state_publisher + ros2_control_node + spawners.
 
-## Usage
+## Building
+
+From your colcon workspace:
+
+```bash
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-select lucy_ros2_control
+source install/setup.bash
+```
+
+## Quick start
 
 ```bash
 ros2 launch lucy_ros2_control control.launch.py
 ```
 
-Optional args: `urdf_path:=<path>` `base_path:=<path>` (defaults point to `thais_urdf/inmoov`).
+Optional args: `urdf_path:=<path>` `base_path:=<path>` (defaults: **`thais_urdf`** package share → `inmoov/`). Requires **`thais_urdf`** installed in the same workspace / underlay.
 
 ## Real + RViz + rosbridge / Gazebo + RViz + rosbridge
 

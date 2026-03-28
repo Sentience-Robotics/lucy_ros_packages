@@ -45,18 +45,15 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
   // hw_velocities_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN()); // no velocities for our servos
   hw_commands_.resize(info_.joints.size(), 0);
 
-  for (const hardware_interface::ComponentInfo & joint : info_.joints)
-  {
-    if (joint.command_interfaces.size() != 1)
-    {
+  for (const hardware_interface::ComponentInfo & joint : info_.joints) {
+    if (joint.command_interfaces.size() != 1) {
       RCLCPP_FATAL(
         get_logger(), "Joint '%s' has %zu command interfaces found. 1 expected.",
         joint.name.c_str(), joint.command_interfaces.size());
       return hardware_interface::CallbackReturn::ERROR;
     }
 
-    if (joint.command_interfaces[0].name != hardware_interface::HW_IF_POSITION)
-    {
+    if (joint.command_interfaces[0].name != hardware_interface::HW_IF_POSITION) {
       RCLCPP_FATAL(
         get_logger(), "Joint '%s' have %s command interfaces found. '%s' expected.",
         joint.name.c_str(), joint.command_interfaces[0].name.c_str(),
@@ -64,16 +61,14 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
       return hardware_interface::CallbackReturn::ERROR;
     }
 
-    if (joint.state_interfaces.size() != 1)
-    {
+    if (joint.state_interfaces.size() != 1) {
       RCLCPP_FATAL(
         get_logger(), "Joint '%s' has %zu state interface. 1 expected.", joint.name.c_str(),
         joint.state_interfaces.size());
       return hardware_interface::CallbackReturn::ERROR;
     }
 
-    if (joint.state_interfaces[0].name != hardware_interface::HW_IF_POSITION)
-    {
+    if (joint.state_interfaces[0].name != hardware_interface::HW_IF_POSITION) {
       RCLCPP_FATAL(
         get_logger(), "Joint '%s' have '%s' as first state interface. '%s' expected.",
         joint.name.c_str(), joint.state_interfaces[0].name.c_str(),
@@ -83,8 +78,7 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
   }
 
   auto it_topic = info_.hardware_parameters.find("publisher_topic");
-  if (it_topic == info_.hardware_parameters.end() || it_topic->second.empty())
-  {
+  if (it_topic == info_.hardware_parameters.end() || it_topic->second.empty()) {
     RCLCPP_FATAL(get_logger(), "Hardware parameter 'publisher_topic' is missing or empty.");
     return hardware_interface::CallbackReturn::ERROR;
   }
@@ -92,8 +86,7 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
 
   std::string node_name = "lucy_hardware_interface";
   auto it_node = info_.hardware_parameters.find("node_name");
-  if (it_node != info_.hardware_parameters.end() && !it_node->second.empty())
-  {
+  if (it_node != info_.hardware_parameters.end() && !it_node->second.empty()) {
     node_name = it_node->second;
   }
   node_ = std::make_shared<rclcpp::Node>(node_name);
@@ -104,7 +97,9 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
   qos.reliable();
   joint_publisher_ = node_->create_publisher<sensor_msgs::msg::JointState>(publisher_topic, qos);
 
-  RCLCPP_INFO(get_logger(), "Publishing joint state on topic '%s' (RELIABLE for micro-ROS default subscriber)", publisher_topic.c_str());
+  RCLCPP_INFO(
+    get_logger(), "Publishing joint state on topic '%s' (RELIABLE for micro-ROS default subscriber)",
+    publisher_topic.c_str());
 
   return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -113,8 +108,7 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
 std::vector<hardware_interface::StateInterface> LucySystemHardware::export_state_interfaces()
 {
   std::vector<hardware_interface::StateInterface> state_interfaces;
-  for (auto i = 0u; i < info_.joints.size(); i++)
-  {
+  for (auto i = 0u; i < info_.joints.size(); i++) {
     state_interfaces.emplace_back(
       hardware_interface::StateInterface(
         info_.joints[i].name, hardware_interface::HW_IF_POSITION, &hw_positions_[i]));
@@ -126,8 +120,7 @@ std::vector<hardware_interface::StateInterface> LucySystemHardware::export_state
 std::vector<hardware_interface::CommandInterface> LucySystemHardware::export_command_interfaces()
 {
   std::vector<hardware_interface::CommandInterface> command_interfaces;
-  for (auto i = 0u; i < info_.joints.size(); i++)
-  {
+  for (auto i = 0u; i < info_.joints.size(); i++) {
     command_interfaces.emplace_back(
       hardware_interface::CommandInterface(
         info_.joints[i].name, hardware_interface::HW_IF_POSITION, &hw_commands_[i]));
@@ -143,7 +136,6 @@ In our case, the hardware is already ready to receive informations from the Jets
 hardware_interface::CallbackReturn LucySystemHardware::on_activate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
-
   RCLCPP_INFO(get_logger(), "Successfully activated!");
 
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -151,7 +143,7 @@ hardware_interface::CallbackReturn LucySystemHardware::on_activate(
 
 hardware_interface::CallbackReturn LucySystemHardware::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
-{ 
+{
   RCLCPP_INFO(get_logger(), "Successfully deactivated!");
 
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -161,8 +153,7 @@ hardware_interface::return_type LucySystemHardware::read(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
   // Updating the position of each joint from the command
-  for (std::size_t i = 0; i < hw_commands_.size(); i++)
-  {
+  for (std::size_t i = 0; i < hw_commands_.size(); i++) {
     // No encoder for our servos, we assume that the position is always reached
     hw_positions_[i] = hw_commands_[i];
   }
@@ -170,7 +161,7 @@ hardware_interface::return_type LucySystemHardware::read(
   return hardware_interface::return_type::OK;
 }
 
-hardware_interface::return_type ros2_control_demo_example_2 ::LucySystemHardware::write(
+hardware_interface::return_type ros2_control_demo_example_2::LucySystemHardware::write(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
   // Publish actuator JointState for micro-ROS: Pico uses position[virtual_pin] for 9 outputs

@@ -22,6 +22,17 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   ADD_LINTER_TESTS
 )
 
+# Bind-mounted / persisted build dirs can leave .../ament_cmake_python/<pkg>/<pkg> as a directory
+# from an interrupted build; the next build then fails creating the symlink ("Is a directory").
+if(TARGET ament_cmake_python_symlink_${PROJECT_NAME})
+  add_custom_target(_camera_ros_clear_stale_ament_python_symlink
+    COMMAND bash -c "rm -rf -- '${CMAKE_CURRENT_BINARY_DIR}/ament_cmake_python/${PROJECT_NAME}/${PROJECT_NAME}'"
+    VERBATIM
+    COMMENT "Remove stale path before ament_cmake_python symlink (Docker bind mounts)"
+  )
+  add_dependencies(ament_cmake_python_symlink_${PROJECT_NAME} _camera_ros_clear_stale_ament_python_symlink)
+endif()
+
 # Install Python scripts
 install(PROGRAMS
   scripts/camera_publisher.py

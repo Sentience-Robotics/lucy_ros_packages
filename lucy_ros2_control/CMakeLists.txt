@@ -67,5 +67,18 @@ install(TARGETS lucy_ros2_control
   RUNTIME DESTINATION bin
 )
 
+if(BUILD_TESTING)
+  # Apache-2.0 headers in hardware/*.cpp vs GPL-3.0 in package.xml; cpplint noise on vendored style.
+  set(AMENT_LINT_AUTO_EXCLUDE
+    ament_cmake_copyright
+    ament_cmake_cpplint
+  )
+  find_package(ament_cmake_pytest REQUIRED)
+  find_package(ament_lint_auto REQUIRED)
+  ament_lint_auto_find_test_dependencies()
+  ament_add_pytest_test(test_controllers_yaml test/test_controllers_yaml.py
+    TIMEOUT 60
+  )
+endif()
 
 ament_package()

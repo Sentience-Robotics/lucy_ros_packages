@@ -60,20 +60,21 @@ public:
   hardware_interface::return_type write(
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
-  rclcpp::Logger get_logger() const { return *logger_; }
+  rclcpp::Logger get_logger() const {return *logger_;}
   // rclcpp::Clock::SharedPtr get_clock() const { return clock_; }
+
 private:
-    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_publisher_;
-    rclcpp::Node::SharedPtr node_;
+  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_publisher_;
+  rclcpp::Node::SharedPtr node_;
 
-    // Objects for logging
-    std::shared_ptr<rclcpp::Logger> logger_;
-    // rclcpp::Clock::SharedPtr clock_;
+  // Objects for logging
+  std::shared_ptr<rclcpp::Logger> logger_;
+  // rclcpp::Clock::SharedPtr clock_;
 
-    // Store the command for the simulated robot
-    std::vector<double> hw_commands_;
-    std::vector<double> hw_positions_;
-    // std::vector<double> hw_velocities_; // We have no velocity for our servos
+  // Store the command for the simulated robot
+  std::vector<double> hw_commands_;
+  std::vector<double> hw_positions_;
+  // std::vector<double> hw_velocities_; // We have no velocity for our servos
 };
 
 }  // namespace ros2_control_demo_example_2

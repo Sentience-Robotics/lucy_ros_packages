@@ -1,62 +1,62 @@
-# Camera ROS Unit Tests
+# Camera ROS unit tests
 
-This directory contains unit tests for the `camera_ros` package.
+Unit tests for the `camera_ros` package.
 
-## Test Files
+## Test files
 
-- `test_camera_publisher.py` - Tests for CameraPublisher node
-- `test_camera_stream_controller.py` - Tests for CameraStreamController node
+- `test_camera_publisher.py` — `CameraPublisher`
+- `test_camera_stream_controller.py` — `CameraStreamController`
 
-## Running Tests
+## Building
 
-### Run all tests
+From the workspace root:
+
 ```bash
-cd ~/lucy_ws
-colcon build
-source install/setup.zsh
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-select camera_ros --cmake-args -DBUILD_TESTING=ON
+source install/setup.bash
+```
+
+## Quick start
+
+Run the package test suite:
+
+```bash
 colcon test --packages-select camera_ros
 colcon test-result --verbose
 ```
 
-### Run specific test file
+## Running a specific test
+
+**Single file:**
+
 ```bash
 python3 -m pytest src/lucy_ros_packages/camera_ros/test/test_camera_publisher.py -v
 ```
 
-### Run specific test
+**Single test case:**
+
 ```bash
 python3 -m pytest src/lucy_ros_packages/camera_ros/test/test_camera_publisher.py::TestCameraPublisher::test_camera_detection_webcamproduct -v
 ```
 
-## Test Coverage
+(Adjust `src/...` paths if your workspace uses a flat `src/camera_ros` layout.)
 
-The tests cover:
-- Camera detection by webcamproduct name
-- Fallback to default device
-- Service-based streaming control (start/stop)
-- Client count callback functionality
-- Topic naming (ext_camera/jpg)
-- Service responses
+## Coverage
 
-### Generate Coverage Report
+The tests cover camera detection, fallback device, service-based streaming, client-count callbacks, topic names, and service responses. Hardware is mocked.
 
-**Note:** For best results, run tests through `colcon test` first, which properly sets up the ROS2 environment.
+**Recommended:** run once via `colcon test` so the ROS 2 environment is set up, then optional HTML/XML from the main repo README *Tests and coverage* section or:
 
-**Option 1: Using colcon test (recommended)**
 ```bash
 cd ~/lucy_ws
-
-colcon build
 source install/setup.zsh
-
 colcon test --packages-select camera_ros
 colcon test-result --verbose
 ```
 
 ## Notes
 
-- Tests use mocking to avoid requiring actual camera hardware
-- cv2.VideoCapture and subprocess.run are mocked
-- rclpy is initialized/shutdown for each test via fixture
-- Coverage reports are generated automatically when using pytest directly
-
+- `cv2.VideoCapture` and `subprocess.run` are mocked
+- `rclpy` is initialized per test via fixtures
+- Direct `pytest` runs need `source install/setup.bash` so generated interfaces are on the path

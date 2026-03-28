@@ -19,7 +19,8 @@ Launch file for Lucy Robot System.
 
 This launch file starts all core ROS2 components:
 - Two micro-ROS agents (for left and right arm RP2040 controllers)
-- ros2_control (robot_state_publisher, controller_manager, joint_state_broadcaster, arm controllers)
+- ros2_control (robot_state_publisher, controller_manager,
+  joint_state_broadcaster, arm controllers)
 - ROSBridge WebSocket server (for web interface communication)
 - Audio capture and playback nodes (for stereo microphones and speakers)
 - RealSense D435i camera (for vision system with depth sensing)
@@ -30,7 +31,13 @@ Optimized for NVIDIA Jetson AGX Orin.
 
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument, LogInfo, ExecuteProcess, IncludeLaunchDescription, TimerAction
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    IncludeLaunchDescription,
+    LogInfo,
+    TimerAction,
+)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
@@ -98,7 +105,6 @@ def create_audio_nodes(sample_rate, capture_device, playback_device):
 
 def generate_launch_description():
     """Generate launch description for Lucy robot system."""
-
     # Declare launch arguments for flexibility
     device0_arg = DeclareLaunchArgument(
         'device0',
@@ -173,8 +179,10 @@ def generate_launch_description():
         ])
     )
 
-    # ros2_control: robot_state_publisher, ros2_control_node, spawners (joint_state_broadcaster, left/right_arm_controller).
-    # Publishes /actuators/left_arm and /actuators/right_arm for micro-ROS. Started after a short delay so micro_ros_agent and rosbridge are up first.
+    # ros2_control: robot_state_publisher, ros2_control_node, spawners
+    # (joint_state_broadcaster, left/right_arm_controller).
+    # Publishes /actuators/left_arm and /actuators/right_arm for micro-ROS.
+    # Started after a delay so micro_ros_agent and rosbridge are up first.
     ros2_control_launch = TimerAction(
         period=3.0,
         actions=[
