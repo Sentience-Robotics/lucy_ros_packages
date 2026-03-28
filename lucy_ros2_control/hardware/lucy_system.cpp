@@ -17,14 +17,13 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
-#include <iomanip>
 #include <limits>
 #include <memory>
-#include <sstream>
 #include <vector>
 
 #include "hardware_interface/lexical_casts.hpp"
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
+#include "rclcpp/qos.hpp"
 
 namespace ros2_control_demo_example_2
 {
@@ -83,13 +82,29 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
     }
   }
 
-  node_ = std::make_shared<rclcpp::Node>("lucy_hardware_interface");
+  auto it_topic = info_.hardware_parameters.find("publisher_topic");
+  if (it_topic == info_.hardware_parameters.end() || it_topic->second.empty())
+  {
+    RCLCPP_FATAL(get_logger(), "Hardware parameter 'publisher_topic' is missing or empty.");
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+  const std::string publisher_topic = it_topic->second;
 
-  // Creating publisher on uptime_publisher
-  joint_publisher_ = node_->create_publisher<sensor_msgs::msg::JointState>(info_.hardware_parameters["publisher_topic"], 10);
+  std::string node_name = "lucy_hardware_interface";
+  auto it_node = info_.hardware_parameters.find("node_name");
+  if (it_node != info_.hardware_parameters.end() && !it_node->second.empty())
+  {
+    node_name = it_node->second;
+  }
+  node_ = std::make_shared<rclcpp::Node>(node_name);
 
-  RCLCPP_INFO(get_logger(),
-              "Publisher uptime_publisher initialized");
+  // RELIABLE to match micro-ROS rclc_subscription_init_default (RELIABLE). A BEST_EFFORT publisher
+  // does not match a RELIABLE subscription in ROS 2, so the Pico would receive no commands.
+  rclcpp::QoS qos(rclcpp::KeepLast(10));
+  qos.reliable();
+  joint_publisher_ = node_->create_publisher<sensor_msgs::msg::JointState>(publisher_topic, qos);
+
+  RCLCPP_INFO(get_logger(), "Publishing joint state on topic '%s' (RELIABLE for micro-ROS default subscriber)", publisher_topic.c_str());
 
   return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -158,29 +173,25 @@ hardware_interface::return_type LucySystemHardware::read(
 hardware_interface::return_type ros2_control_demo_example_2 ::LucySystemHardware::write(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
-  // Publish the joint states
+  // Publish actuator JointState for micro-ROS: Pico uses position[virtual_pin] for 9 outputs
+  // (see config_*_arm.c). URDF has 10 shoulder/arm joints per arm; omit exactly one per arm so
+  // the stream has 9 entries in bus order.
+  //
+  // Right arm wiring: no servo on URDF right_shoulder_y; shoulder_x is on the bus → omit y only.
+  // Left arm (stock): no separate bus channel for URDF left_shoulder_x (y,z,elbow,…) → omit x.
   sensor_msgs::msg::JointState msg;
-
-  msg.position = hw_commands_;
+  msg.header.stamp = node_->get_clock()->now();
+  msg.name.clear();
+  msg.position.reserve(info_.joints.size());
+  for (std::size_t i = 0; i < info_.joints.size(); ++i) {
+    const std::string & joint_name = info_.joints[i].name;
+    if (joint_name == "right_shoulder_y_link_joint" || joint_name == "left_shoulder_y_link_joint") {
+      continue;
+    }
+    msg.position.push_back(hw_commands_[i]);
+  }
 
   joint_publisher_->publish(msg);
-
-  // printing every angles of our joints
-  if (!hw_commands_.empty()) {
-    std::ostringstream oss;
-    oss << "[";
-    size_t max_print = std::min(hw_commands_.size(), static_cast<size_t>(10));
-    for (size_t i = 0; i < max_print; ++i) {
-        oss << hw_commands_[i];
-        if (i != max_print - 1) oss << ", ";
-    }
-    if (hw_commands_.size() > max_print) {
-        oss << ", ...";
-    }
-    oss << "]";
-
-    RCLCPP_INFO(get_logger(), "hw_commands_ = %s", oss.str().c_str());
-}
 
   return hardware_interface::return_type::OK;
 }

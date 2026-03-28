@@ -19,6 +19,7 @@ Launch file for Lucy Robot System.
 
 This launch file starts all core ROS2 components:
 - Two micro-ROS agents (for left and right arm RP2040 controllers)
+- ros2_control (robot_state_publisher, controller_manager, joint_state_broadcaster, arm controllers)
 - ROSBridge WebSocket server (for web interface communication)
 - Audio capture and playback nodes (for stereo microphones and speakers)
 - RealSense D435i camera (for vision system with depth sensing)
@@ -29,7 +30,7 @@ Optimized for NVIDIA Jetson AGX Orin.
 
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument, LogInfo, ExecuteProcess, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, LogInfo, ExecuteProcess, IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
@@ -172,6 +173,23 @@ def generate_launch_description():
         ])
     )
 
+    # ros2_control: robot_state_publisher, ros2_control_node, spawners (joint_state_broadcaster, left/right_arm_controller).
+    # Publishes /actuators/left_arm and /actuators/right_arm for micro-ROS. Started after a short delay so micro_ros_agent and rosbridge are up first.
+    ros2_control_launch = TimerAction(
+        period=3.0,
+        actions=[
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource([
+                    PathJoinSubstitution([
+                        FindPackageShare('lucy_ros2_control'),
+                        'launch',
+                        'control.launch.py'
+                    ])
+                ])
+            )
+        ]
+    )
+
     return LaunchDescription([
         # Launch arguments
         device0_arg,
@@ -192,10 +210,12 @@ def generate_launch_description():
         # *audio_nodes,  # Unpack audio nodes (currently disabled)
         camera_launch,  # External USB webcam
         realsense_launch,  # RealSense D435i camera
+        ros2_control_launch,  # robot_state_publisher + ros2_control + spawners (after 3s delay)
 
         # Success message
         LogInfo(msg='✅ All ROS nodes launched successfully!'),
         LogInfo(msg='   - Micro-ROS Agents: right & left arm'),
+        LogInfo(msg='   - ros2_control: /actuators/left_arm, /actuators/right_arm for Picos'),
         LogInfo(msg='   - ROSBridge Server: WebSocket ready'),
         LogInfo(msg='   - Audio System: Capture & playback ready'),
         LogInfo(msg='   - External USB Webcam: Stream ready'),

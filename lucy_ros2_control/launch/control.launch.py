@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Real robot only: robot_state_publisher + ros2_control_node + spawners.
-# Publishes /joints/left_arm and /joints/right_arm for micro-controllers. No RViz, no rosbridge.
+# Publishes /actuators/left_arm and /actuators/right_arm for micro-ROS Picos. No RViz, no rosbridge.
 
 import os
 

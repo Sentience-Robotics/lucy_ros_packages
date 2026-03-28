@@ -4,7 +4,7 @@ ROS 2 Control for Lucy: hardware interface, controller config, and launch file.
 
 ## Contents
 
-- **Hardware interface** — `LucySystemHardware` (publishes `/joints/left_arm`, `/joints/right_arm` for micro-controllers).
+- **Hardware interface** — `LucySystemHardware` (publishes `/actuators/left_arm`, `/actuators/right_arm` for micro-controllers).
 - **Config** — `config/lucy_controllers.yaml`.
 - **Launch** — `control.launch.py`: robot_state_publisher + ros2_control_node + spawners.
 

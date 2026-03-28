@@ -124,8 +124,8 @@ ros2 node list
 ros2 topic list
 
 # Echo joint commands
-ros2 topic echo /joints/right_arm
-ros2 topic echo /joints/left_arm
+ros2 topic echo /actuators/right_arm
+ros2 topic echo /actuators/left_arm
 
 # Check audio topics
 ros2 topic echo /audio
