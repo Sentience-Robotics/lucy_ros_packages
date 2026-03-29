@@ -114,8 +114,8 @@ GitHub Actions (`.github/workflows/ci.yml`) runs **`rosdep`**, **`colcon build`*
 | This file | Anyone cloning **this** repository |
 | [**doc/DEVELOPER.md**](doc/DEVELOPER.md) | **Contributors** — build, CI, package internals, extension checklist |
 | [lucy_bringup/README.md](lucy_bringup/README.md) | Operators and integrators (devices, tmux, launch args) |
-| [lucy_ros2_control/README.md](lucy_ros2_control/README.md) | Control and URDF plugin integration |
-| [lucy_ros2_control/docs/ROS2_CONTROL_ARCHITECTURE.md](lucy_ros2_control/docs/ROS2_CONTROL_ARCHITECTURE.md) | Deeper `ros2_control` design notes |
+| [lucy_ros2_control/README.md](lucy_ros2_control/README.md) | Control stack quick start |
+| [**doc/ROS2_CONTROL.md**](doc/ROS2_CONTROL.md) | **ros2_control** — general concepts + Lucy (`LucySystemHardware`, topics, launches) |
 | [camera_ros/README.md](camera_ros/README.md) | Camera topics, parameters, troubleshooting |
 
 If these repos live under **`lucy_ws`**, see **`lucy_ws/docs/developer_lucy_packages.md`** (index into each repo’s `doc/DEVELOPER.md`) and **`lucy_ws/docs/simulation_and_visualization.md`** (full-stack pipeline).

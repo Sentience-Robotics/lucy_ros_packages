@@ -22,7 +22,9 @@ Conventions follow common packaging practice ([REP-149](https://www.ros.org/reps
 
 ```text
 lucy_ros_packages/
-├── doc/DEVELOPER.md          # this file
+├── doc/
+│   ├── DEVELOPER.md         # this file
+│   └── ROS2_CONTROL.md     # ros2_control concepts + Lucy implementation
 ├── lucy_bringup/
 ├── lucy_ros2_control/
 └── camera_ros/
@@ -72,6 +74,7 @@ source install/setup.bash
 | **Launch** | `ros2 launch lucy_ros2_control control.launch.py` |
 | **Plugin** | `lucy_ros2_control.xml` → `lucy_ros2_control/LucySystemHardware`; C++ implementation under `hardware/`. |
 | **Config** | `config/lucy_controllers.yaml` — must match joint names in **thais_urdf** xacro (`inmoov_ros2_control.xacro`). |
+| **Architecture** | **[doc/ROS2_CONTROL.md](ROS2_CONTROL.md)** — general ros2_control → Lucy topics, YAML, launches, pitfalls. |
 
 **When you change controllers or joints**
 
