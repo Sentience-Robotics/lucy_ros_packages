@@ -11,7 +11,15 @@ This package provides a unified way to launch all components of the Lucy robot s
 - Intel RealSense D435i camera (for vision system with depth sensing)
 - Web control panel interface
 
-## Quick Start
+## Building
+
+From your colcon workspace (e.g. `src/lucy_ros_packages/lucy_bringup`):
+
+```bash
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-select lucy_bringup
+source install/setup.bash
+```
 
 ### Using the tmux Launcher (Recommended for Development)
 
@@ -124,8 +132,8 @@ ros2 node list
 ros2 topic list
 
 # Echo joint commands
-ros2 topic echo /joints/right_arm
-ros2 topic echo /joints/left_arm
+ros2 topic echo /actuators/right_arm
+ros2 topic echo /actuators/left_arm
 
 # Check audio topics
 ros2 topic echo /audio

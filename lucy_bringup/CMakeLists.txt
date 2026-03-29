@@ -24,7 +24,11 @@ install(PROGRAMS
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
   ament_lint_auto_find_test_dependencies()
+  ament_add_pytest_test(test_launch_syntax test/test_launch_syntax.py
+    TIMEOUT 120
+  )
 endif()
 
 ament_package()

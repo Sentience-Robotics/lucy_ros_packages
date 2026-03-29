@@ -1,4 +1,4 @@
-# Copyright 2024 Sentience Robotics Team
+# Copyright 2025 Sentience Robotics Team
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,10 +13,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Camera ROS Package.
+"""Verify launch Python files compile (syntax only; no ROS runtime)."""
+import py_compile
+from pathlib import Path
 
-Zero-copy MJPEG camera publisher optimized for NVIDIA Jetson AGX Orin.
-"""
 
-__version__ = "1.0.0"
+def test_launch_py_files_compile():
+    launch_dir = Path(__file__).resolve().parents[1] / 'launch'
+    files = sorted(launch_dir.glob('*.py'))
+    assert files, 'expected launch/*.py'
+    for path in files:
+        py_compile.compile(str(path), doraise=True)

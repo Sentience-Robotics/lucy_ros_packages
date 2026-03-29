@@ -111,7 +111,7 @@ echo ""
 echo -e "${BLUE}Key Topics:${NC}"
 
 # Check important topics
-for topic in "/joints/right_arm" "/joints/left_arm" "/trace_publisher" "/ext_camera/jpg" "/audio"; do
+for topic in "/actuators/right_arm" "/actuators/left_arm" "/trace_publisher" "/ext_camera/jpg" "/audio"; do
     echo -n "  $topic: "
     if ros2 topic list 2>/dev/null | grep -q "$topic"; then
         echo -e "${GREEN}✅ Available${NC}"
