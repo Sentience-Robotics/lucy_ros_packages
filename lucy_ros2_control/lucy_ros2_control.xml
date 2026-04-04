@@ -1,0 +1,9 @@
+<library path="lucy_ros2_control">
+  <class name="lucy_ros2_control/LucySystemHardware"
+         type="ros2_control_demo_example_2::LucySystemHardware"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+    Our LucySystemHardware.
+    </description>
+  </class>
+</library>

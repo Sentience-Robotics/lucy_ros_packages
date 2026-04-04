@@ -1,0 +1,129 @@
+# lucy_ros_packages
+
+ROS 2 **Humble** repository for **Lucy** (Sentience Robotics): runtime bringup, `ros2_control` hardware integration, and camera tooling. This is a **multi-package** repo; each subdirectory under `src/` in your colcon workspace is one `ament` package.
+
+## What lives here
+
+| Package | One-line role |
+|---------|----------------|
+| [**lucy_bringup**](lucy_bringup/) | Jetson-oriented **system launch**: micro-ROS agents, `rosbridge_server`, RealSense, `camera_ros`, delayed [`lucy_ros2_control`](lucy_ros2_control/) bringup. |
+| [**lucy_ros2_control**](lucy_ros2_control/) | **Hardware** `ros2_control` plugin (`LucySystemHardware`), controller YAML, `control.launch.py` for the real robot stack (no RViz/rosbridge in that launch). |
+| [**camera_ros**](camera_ros/) | GStreamer-based **MJPEG** → `sensor_msgs/CompressedImage`; client-aware activation. |
+
+Package names match directories (`<name>` in each `package.xml`).
+
+## How this repo fits the platform
+
+- **Robot model, RViz, Gazebo, and “combo” launches** (real or sim + rosbridge) live in the sibling repo **[thais_urdf](https://github.com/Sentience-Robotics/thais_urdf)** (or your fork), package name `thais_urdf`. `lucy_ros2_control` expects URDF/xacro and meshes from that tree when using default paths.
+- **Web control panel** and teleop semantics are **not** in this repo; they consume the same topics/controllers documented in lucy_ws docs.
+
+## Requirements
+
+- **OS**: Ubuntu 22.04
+- **ROS**: [ROS 2 Humble](https://docs.ros.org/en/humble/Installation.html).
+- **Per-package extras**: Jetson-typical USB video and audio stacks for bringup; RealSense SDK stack for `realsense2_camera`; serial devices for micro-ROS. See each package README and `lucy_bringup/REALSENSE.md`.
+
+## Building (colcon workspace)
+
+Treat this repository as **`src/lucy_ros_packages`** (clone the contents into that folder) **or** clone in place so that packages are direct children of your workspace `src/`:
+
+```text
+lucy_ws/
+└── src/
+    ├── lucy_ros_packages/    # this repo: lucy_bringup, lucy_ros2_control, camera_ros
+    └── thais_urdf/           # robot description + sim launches (separate repo)
+```
+
+Example build:
+
+```bash
+source /opt/ros/humble/setup.bash
+cd lucy_ws
+colcon build --symlink-install \
+  --packages-select lucy_bringup lucy_ros2_control camera_ros
+source install/setup.bash
+```
+
+To include simulation/description from the other repo:
+
+```bash
+colcon build --symlink-install \
+  --packages-select lucy_bringup lucy_ros2_control camera_ros thais_urdf
+```
+
+## Quick start
+
+| Goal | Entry point |
+|------|-------------|
+| Full Jetson stack (agents, rosbridge, cameras, `ros2_control`) | `ros2 launch lucy_bringup lucy.launch.py` |
+| Control stack only (defaults assume `thais_urdf` layout in workspace) | `ros2 launch lucy_ros2_control control.launch.py` |
+| USB MJPEG camera node | `ros2 launch camera_ros camera.launch.py` |
+
+Tmux helpers ship with `lucy_bringup` (`system_scripts/`); see [lucy_bringup/README.md](lucy_bringup/README.md).
+
+## Tests and coverage (local)
+
+**Dependencies:** `python3-pytest-cov` (e.g. `sudo apt install python3-pytest-cov` on Ubuntu).
+
+From your **workspace root** (e.g. `lucy_ws`), with packages under `src/lucy_ros_packages/`:
+
+```bash
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install \
+  --packages-select camera_ros lucy_bringup lucy_ros2_control \
+  --cmake-args -DBUILD_TESTING=ON
+source install/setup.bash
+
+colcon test --packages-select camera_ros lucy_bringup lucy_ros2_control --event-handlers console_direct+
+colcon test-result --verbose
+```
+
+**Coverage** (same `source install/setup.bash` as above; open `build/coverage_html/.../index.html` after `--cov-report=html`):
+
+```bash
+mkdir -p build/coverage_reports build/coverage_html
+python3 -m pytest src/lucy_ros_packages/camera_ros/test/ \
+  --cov=src/lucy_ros_packages/camera_ros/scripts \
+  --cov-report=term-missing \
+  --cov-report=xml:build/coverage_reports/camera_ros.xml \
+  --cov-report=html:build/coverage_html/camera_ros
+
+python3 -m pytest src/lucy_ros_packages/lucy_bringup/test/ \
+  --cov=src/lucy_ros_packages/lucy_bringup/launch \
+  --cov-report=term-missing \
+  --cov-report=xml:build/coverage_reports/lucy_bringup.xml \
+  --cov-report=html:build/coverage_html/lucy_bringup
+
+python3 -m pytest src/lucy_ros_packages/lucy_ros2_control/test/ \
+  --cov=src/lucy_ros_packages/lucy_ros2_control/test \
+  --cov-report=term-missing \
+  --cov-report=xml:build/coverage_reports/lucy_ros2_control.xml \
+  --cov-report=html:build/coverage_html/lucy_ros2_control
+```
+
+**Meaningful line coverage** is mostly from **`camera_ros/scripts`**; bringup tests only **byte-compile** launch files, and `lucy_ros2_control` tests cover **YAML + Python helpers**, not the C++ hardware plugin.
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) runs **`rosdep`**, **`colcon build`**, **`colcon test`**, then **`pytest-cov`** over all Python tests, producing Cobertura XML under `ws/build/coverage_reports/` for **`camera_ros`**, **`lucy_bringup`**, and **`lucy_ros2_control`**. Reports are uploaded to [**Codecov**](https://codecov.io) when **`CODECOV_TOKEN`** is set on the repo, and HTML/XML are attached as workflow artifacts (`coverage-lucy_ros_packages`). See [`doc/DEVELOPER.md`](doc/DEVELOPER.md) §5.
+
+## Documentation map
+
+| Doc | Audience |
+|-----|----------|
+| This file | Anyone cloning **this** repository |
+| [**doc/DEVELOPER.md**](doc/DEVELOPER.md) | **Contributors** — build, CI, package internals, extension checklist |
+| [lucy_bringup/README.md](lucy_bringup/README.md) | Operators and integrators (devices, tmux, launch args) |
+| [lucy_ros2_control/README.md](lucy_ros2_control/README.md) | Control stack quick start |
+| [**doc/ROS2_CONTROL.md**](doc/ROS2_CONTROL.md) | **ros2_control** — general concepts + Lucy (`LucySystemHardware`, topics, launches) |
+| [camera_ros/README.md](camera_ros/README.md) | Camera topics, parameters, troubleshooting |
+
+If these repos live under **`lucy_ws`**, see **`lucy_ws/docs/developer_lucy_packages.md`** (index into each repo’s `doc/DEVELOPER.md`) and **`lucy_ws/docs/simulation_and_visualization.md`** (full-stack pipeline).
+
+## License
+
+Packages in this repository are licensed under **GPL-3.0** unless a subdirectory states otherwise. See each package and the repository **`LICENSE`** file if present.
+
+## Maintainer
+
+Sentience Robotics Team — `contact@sentience-robotics.fr` (see `package.xml` files).

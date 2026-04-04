@@ -1,0 +1,124 @@
+# Developer guide — `lucy_ros_packages`
+
+ROS 2 **Humble**. For **contributors** who change launch files, nodes, `ros2_control` config, or CI in **this repository only**.
+
+**Sibling robot description / sim launches**: `../thais_urdf/doc/DEVELOPER.md` when both repos live under the same workspace `src/` (e.g. `lucy_ws/src`). On GitHub: [Sentience-Robotics/thais_urdf](https://github.com/Sentience-Robotics/thais_urdf) → `doc/DEVELOPER.md`.
+
+Conventions follow common packaging practice ([REP-149](https://www.ros.org/reps/rep-0149.html): accurate `package.xml`, install rules, documented launch entry points).
+
+---
+
+## 1. Packages in this repo
+
+| Package | Responsibility |
+|---------|----------------|
+| `lucy_bringup` | Jetson **system bringup**: micro-ROS agents, `rosbridge_server`, `camera_ros`, RealSense, delayed include of `lucy_ros2_control`. |
+| `lucy_ros2_control` | **Hardware** `ros2_control`: `LucySystemHardware` plugin, `lucy_controllers.yaml`, `control.launch.py`. |
+| `camera_ros` | MJPEG → `sensor_msgs/msg/CompressedImage`; GStreamer pipeline; pytest. |
+
+---
+
+## 2. Layout
+
+```text
+lucy_ros_packages/
+├── doc/
+│   ├── DEVELOPER.md         # this file
+│   └── ROS2_CONTROL.md     # ros2_control concepts + Lucy implementation
+├── lucy_bringup/
+├── lucy_ros2_control/
+└── camera_ros/
+```
+
+---
+
+## 3. Build, test, install
+
+```bash
+cd lucy_ws   # or your colcon workspace root
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install \
+  --packages-select lucy_bringup lucy_ros2_control camera_ros
+source install/setup.bash
+```
+
+**Hygiene**
+
+- **`package.xml`**: `exec_depend` for anything launched at runtime; `depend` / `buildtool_depend` for build-time Python/C++.
+- **`CMakeLists.txt`**: install everything consumers need under `share/${PROJECT_NAME}/` (or `lib/`) so `ros2 pkg prefix <pkg>` is sufficient.
+- **Tests**: enable `BUILD_TESTING`; extend `ament_lint` / pytest when behavior changes.
+- **Version**: bump `<version>` in `package.xml` on visible behavior or API changes.
+
+---
+
+## 4. Package reference
+
+### `lucy_bringup`
+
+| Item | Detail |
+|------|--------|
+| **Launch** | `ros2 launch lucy_bringup lucy.launch.py` |
+| **Args** | `device0`, `device1` (default `/dev/ttyACM0`, `/dev/ttyACM1`); audio args declared but audio nodes are **commented out** in `lucy.launch.py`; RealSense via `realsense.launch.py`. |
+| **Scripts** | `system_scripts/*.sh` → installed under `lib/lucy_bringup`. |
+| **Runtime deps** | `micro_ros_agent`, `lucy_ros2_control`, `rosbridge_server`, `camera_ros`, `audio_common`, `realsense2_camera`, `launch`, `launch_ros`. |
+
+**Developers**
+
+- `lucy_ros2_control` is included after a **3 s** `TimerAction` so serial/rosbridge can settle; if you change ordering, re-validate hardware bringup.
+- See `REALSENSE.md`, `AUDIO.md` in this package for subsystems.
+
+### `lucy_ros2_control`
+
+| Item | Detail |
+|------|--------|
+| **Launch** | `ros2 launch lucy_ros2_control control.launch.py` |
+| **Plugin** | `lucy_ros2_control.xml` → `lucy_ros2_control/LucySystemHardware`; C++ implementation under `hardware/`. |
+| **Config** | `config/lucy_controllers.yaml` — must match joint names in **thais_urdf** xacro (`inmoov_ros2_control.xacro`). |
+| **Architecture** | **[doc/ROS2_CONTROL.md](ROS2_CONTROL.md)** — general ros2_control → Lucy topics, YAML, launches, pitfalls. |
+
+**When you change controllers or joints**
+
+1. Edit `config/lucy_controllers.yaml`.
+2. Update **`thais_urdf`** ros2_control xacro in the **same change set** (or coordinated PRs).
+3. Align any external UI / teleop joint lists (e.g. control panel config).
+
+### `camera_ros`
+
+| Item | Detail |
+|------|--------|
+| **Launch** | `ros2 launch camera_ros camera.launch.py` (`fps`, `device`, USB ids, …). |
+| **Tests** | `colcon test --packages-select camera_ros` with `BUILD_TESTING=ON`. |
+
+---
+
+## 5. CI
+
+`.github/workflows/ci.yml` runs in `osrf/ros:humble-desktop` on **pull_request** and on **push** to **`main` / `master` / `dev`** only (avoids duplicate runs when a PR branch is pushed):
+
+- **`rosdep install --from-paths src`** for `camera_ros`, `lucy_bringup`, `lucy_ros2_control`
+- **`colcon build`** with `BUILD_TESTING=ON`
+- **`colcon test`** — ament linters, `camera_ros` pytests, **`lucy_bringup`** launch `py_compile` tests, **`lucy_ros2_control`** YAML tests
+- **`pytest-cov`** — `camera_ros` (`scripts/`), `lucy_bringup` (`launch/`), `lucy_ros2_control` (`test/`) → Cobertura XML + HTML under `ws/build/coverage_reports/`; **Codecov** flag `lucy_ros_packages` (optional **`CODECOV_TOKEN`**)
+
+Local commands: **README.md** → *Tests and coverage (local)*.
+
+---
+
+## 6. Extension checklist (`lucy_ros_packages`)
+
+1. New **runtime** dependency → correct `package.xml` in the affected package.
+2. New **launch or config** → `install()` in that package’s `CMakeLists.txt`.
+3. New **topic/service** → document in the package `README.md`.
+4. **Control / joints** → always coordinate with **`thais_urdf`** (see its `doc/DEVELOPER.md`).
+
+---
+
+## 7. Quick commands
+
+| Goal | Command |
+|------|---------|
+| Full Jetson stack | `ros2 launch lucy_bringup lucy.launch.py` |
+| Control stack only | `ros2 launch lucy_ros2_control control.launch.py` (requires **`thais_urdf`** installed in overlay — provides default URDF share) |
+| USB camera | `ros2 launch camera_ros camera.launch.py` |
+
+RViz / Gazebo combo launches live in **`thais_urdf`**.

@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+      - dev
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    container:
+      image: osrf/ros:humble-desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system and ROS dependencies
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends \
+            python3-pip \
+            python3-rosdep \
+            python3-pytest \
+            python3-pytest-mock \
+            python3-pytest-cov \
+            python3-yaml \
+            python3-opencv \
+            gstreamer1.0-tools \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly \
+            v4l-utils \
+            build-essential \
+            cmake \
+            git
+          rosdep init || true
+          rosdep update
+
+      - name: Workspace layout
+        run: |
+          mkdir -p ws/src
+          cp -r camera_ros lucy_bringup lucy_ros2_control ws/src/
+
+      # Do not `rm -rf /var/lib/apt/lists/*` before this: rosdep/apt need indexes for packages.ros.org.
+      # Skip keys: not in this CI tree (thais_urdf), external/third-party (audio_common), or hardware agents not needed to compile/test.
+      - name: rosdep install
+        working-directory: ws
+        shell: bash
+        run: |
+          apt-get update
+          source /opt/ros/humble/setup.bash
+          rosdep install --from-paths src --ignore-src -r -y \
+            --skip-keys="audio_common micro_ros_agent realsense2_camera thais_urdf"
+
+      - name: colcon build
+        working-directory: ws
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build --symlink-install \
+            --packages-select camera_ros lucy_bringup lucy_ros2_control \
+            --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+
+      - name: colcon test
+        working-directory: ws
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          colcon test \
+            --packages-select camera_ros lucy_bringup lucy_ros2_control \
+            --event-handlers console_direct+ \
+            --pytest-args "--tb=short -vv"
+
+      - name: colcon test-result
+        working-directory: ws
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          colcon test-result --verbose
+
+      - name: Code coverage (pytest-cov, all Python tests)
+        working-directory: ws
+        shell: bash
+        if: success()
+        run: |
+          set -e
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          mkdir -p build/coverage_reports
+          # camera_ros — production code under scripts/
+          python3 -m pytest src/camera_ros/test/ \
+            --cov=src/camera_ros/scripts \
+            --cov-report=xml:build/coverage_reports/camera_ros.xml \
+            --cov-report=html:build/coverage_reports/html_camera_ros \
+            --cov-report=term-missing \
+            --cov-branch
+          # lucy_bringup — launch/*.py (py_compile tests do not execute module bodies; expect low %)
+          python3 -m pytest src/lucy_bringup/test/ \
+            --cov=src/lucy_bringup/launch \
+            --cov-report=xml:build/coverage_reports/lucy_bringup.xml \
+            --cov-report=html:build/coverage_reports/html_lucy_bringup \
+            --cov-report=term-missing \
+            --cov-branch
+          # lucy_ros2_control — YAML validation tests only (no C++ coverage here)
+          python3 -m pytest src/lucy_ros2_control/test/ \
+            --cov=src/lucy_ros2_control/test \
+            --cov-report=xml:build/coverage_reports/lucy_ros2_control.xml \
+            --cov-report=html:build/coverage_reports/html_lucy_ros2_control \
+            --cov-report=term-missing \
+            --cov-branch
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: success()
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ws/build/coverage_reports/camera_ros.xml,ws/build/coverage_reports/lucy_bringup.xml,ws/build/coverage_reports/lucy_ros2_control.xml
+          flags: lucy_ros_packages
+          name: lucy_ros_packages
+          fail_ci_if_error: false
+
+      - name: Upload coverage artifacts (XML + HTML)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-lucy_ros_packages
+          path: ${{ github.workspace }}/ws/build/coverage_reports/
+          retention-days: 14
