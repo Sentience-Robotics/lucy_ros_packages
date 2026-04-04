@@ -1,0 +1,14 @@
+int main()
+{
+    {% for actuator in actuators %}    
+    joint->config.virtual_pin = {{ actuator.virtual_pin }}
+    joint->config.physical_pin = {{ actuator.physical_pin }}
+    joint->config.servo_type = {{ actuator.servo_type }}
+    joint->config.security_min_angle = {{ actuator.security_min_angle }}
+    joint->config.security_max_angle = {{ actuator.security_max_angle }}
+    joint->config.default_angle = {{ actuator.default_angle }}
+    joint->config.init_joint = {{ actuator.init_joint }}
+    joint->config.move_joint = {{ actuator.move_joint }}
+    joint++;
+    {% endfor %}
+}
