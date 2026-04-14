@@ -1,0 +1,7 @@
+# Request
+string robot_package          # e.g. "thais_urdf"
+string config_name            # name of config to delete
+---
+# Response
+bool success
+string message

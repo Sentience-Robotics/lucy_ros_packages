@@ -9,6 +9,11 @@ find_package(builtin_interfaces REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RawSensor.msg"
   "action/ConfigurePipeline.action"
+  "srv/ListConfigs.srv"
+  "srv/GetConfig.srv"
+  "srv/SaveConfig.srv"
+  "srv/ActivateConfig.srv"
+  "srv/DeleteConfig.srv"
   DEPENDENCIES action_msgs builtin_interfaces
 )
 

@@ -1,0 +1,11 @@
+# Request
+string robot_package          # e.g. "thais_urdf"
+string config_name            # name to save as
+string config_yaml            # full YAML content as string
+bool activate                 # also activate this config after saving
+---
+# Response
+bool success
+string message
+string[] validation_errors    # blocking schema/consistency errors
+string[] urdf_warnings        # non-blocking URDF cross-check warnings
