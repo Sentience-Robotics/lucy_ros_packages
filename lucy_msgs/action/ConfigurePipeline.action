@@ -1,5 +1,5 @@
 # Goal: trigger the hardware configuration pipeline
-string robot_package          # e.g. "thais_urdf"
+string robot_package          # e.g. "inmoov_urdf"
 string mapping_file           # config name or path (empty = active config)
 string[] boards_to_flash      # board names to flash (empty = all boards)
 bool dry_run                  # validate + generate only, no build/flash

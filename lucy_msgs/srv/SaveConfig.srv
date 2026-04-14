@@ -1,5 +1,5 @@
 # Request
-string robot_package          # e.g. "thais_urdf"
+string robot_package          # e.g. "inmoov_urdf"
 string config_name            # name to save as
 string config_yaml            # full YAML content as string
 bool activate                 # also activate this config after saving
