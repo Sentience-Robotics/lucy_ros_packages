@@ -1,0 +1,19 @@
+# Goal: trigger the hardware configuration pipeline
+string robot_package          # e.g. "inmoov_urdf"
+string mapping_file           # config name or path (empty = active config)
+string[] boards_to_flash      # board names to flash (empty = all boards)
+bool dry_run                  # validate + generate only, no build/flash
+bool build_only               # validate + generate + build, no flash
+---
+# Result
+bool success
+string message
+string config_name            # name of the config that was applied
+string[] boards_flashed       # board names that were successfully flashed
+string[] errors               # per-phase error messages (if any)
+---
+# Feedback
+string phase                  # "validate", "generate", "build", "flash"
+string board                  # current board being processed (empty if N/A)
+float32 progress              # 0.0 to 1.0 within the current phase
+string detail                 # human-readable status message

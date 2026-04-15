@@ -1,0 +1,8 @@
+# Request
+string robot_package          # e.g. "inmoov_urdf"
+---
+# Response
+bool success
+string message
+string active_config          # name of the currently active config
+string[] config_names         # all available config names

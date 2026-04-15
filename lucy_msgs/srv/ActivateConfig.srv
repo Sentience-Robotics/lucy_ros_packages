@@ -1,0 +1,8 @@
+# Request
+string robot_package          # e.g. "inmoov_urdf"
+string config_name            # name of config to activate
+---
+# Response
+bool success
+string message
+string backup_name            # name of the backup created from the previous active config
