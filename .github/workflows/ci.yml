@@ -37,12 +37,12 @@ jobs:
             cmake \
             git
           rosdep init || true
-          rosdep update
+          rosdep update || true
 
       - name: Workspace layout
         run: |
           mkdir -p ws/src
-          cp -r camera_ros lucy_bringup lucy_ros2_control ws/src/
+          cp -r camera_ros lucy_bringup lucy_ros2_control lucy_config_generator ws/src/
 
       # Do not `rm -rf /var/lib/apt/lists/*` before this: rosdep/apt need indexes for packages.ros.org.
       # Skip keys: not in this CI tree (thais_urdf), external/third-party (audio_common), or hardware agents not needed to compile/test.
@@ -61,7 +61,7 @@ jobs:
         run: |
           source /opt/ros/humble/setup.bash
           colcon build --symlink-install \
-            --packages-select camera_ros lucy_bringup lucy_ros2_control \
+            --packages-select camera_ros lucy_bringup lucy_ros2_control lucy_config_generator \
             --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
 
       - name: colcon test
@@ -71,9 +71,9 @@ jobs:
           source /opt/ros/humble/setup.bash
           source install/setup.bash
           colcon test \
-            --packages-select camera_ros lucy_bringup lucy_ros2_control \
+            --packages-select camera_ros lucy_bringup lucy_ros2_control lucy_config_generator \
             --event-handlers console_direct+ \
-            --pytest-args "--tb=short -vv"
+            --pytest-args -vv --tb=short
 
       - name: colcon test-result
         working-directory: ws
@@ -113,13 +113,20 @@ jobs:
             --cov-report=html:build/coverage_reports/html_lucy_ros2_control \
             --cov-report=term-missing \
             --cov-branch
+          # lucy_config_generator — golden template tests
+          python3 -m pytest src/lucy_config_generator/test/ \
+            --cov=src/lucy_config_generator/lucy_config_generator \
+            --cov-report=xml:build/coverage_reports/lucy_config_generator.xml \
+            --cov-report=html:build/coverage_reports/html_lucy_config_generator \
+            --cov-report=term-missing \
+            --cov-branch
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         if: success()
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ws/build/coverage_reports/camera_ros.xml,ws/build/coverage_reports/lucy_bringup.xml,ws/build/coverage_reports/lucy_ros2_control.xml
+          files: ws/build/coverage_reports/camera_ros.xml,ws/build/coverage_reports/lucy_bringup.xml,ws/build/coverage_reports/lucy_ros2_control.xml,ws/build/coverage_reports/lucy_config_generator.xml
           flags: lucy_ros_packages
           name: lucy_ros_packages
           fail_ci_if_error: false

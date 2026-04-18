@@ -2,7 +2,7 @@
 
 ROS 2 **Humble**. For **contributors** who change launch files, nodes, `ros2_control` config, or CI in **this repository only**.
 
-**Sibling robot description / sim launches**: `../thais_urdf/doc/DEVELOPER.md` when both repos live under the same workspace `src/` (e.g. `lucy_ws/src`). On GitHub: [Sentience-Robotics/thais_urdf](https://github.com/Sentience-Robotics/thais_urdf) → `doc/DEVELOPER.md`.
+**Sibling robot description / sim launches**: `../thais_urdf/docs/DEVELOPER.md` when both repos live under the same workspace `src/` (e.g. `lucy_ws/src`). On GitHub: [Sentience-Robotics/thais_urdf](https://github.com/Sentience-Robotics/thais_urdf) → `docs/DEVELOPER.md`.
 
 Conventions follow common packaging practice ([REP-149](https://www.ros.org/reps/rep-0149.html): accurate `package.xml`, install rules, documented launch entry points).
 
@@ -14,6 +14,7 @@ Conventions follow common packaging practice ([REP-149](https://www.ros.org/reps
 |---------|----------------|
 | `lucy_bringup` | Jetson **system bringup**: micro-ROS agents, `rosbridge_server`, `camera_ros`, RealSense, delayed include of `lucy_ros2_control`. |
 | `lucy_ros2_control` | **Hardware** `ros2_control`: `LucySystemHardware` plugin, `lucy_controllers.yaml`, `control.launch.py`. |
+| `lucy_config_generator` | Reads **`thais_urdf`** `config/hardware/active.yaml` (or selected export) → RP2040 `config_*.c`, `ros2_control` xacro, `controllers.yaml`. |
 | `camera_ros` | MJPEG → `sensor_msgs/msg/CompressedImage`; GStreamer pipeline; pytest. |
 
 ---
@@ -22,11 +23,12 @@ Conventions follow common packaging practice ([REP-149](https://www.ros.org/reps
 
 ```text
 lucy_ros_packages/
-├── doc/
+├── docs/
 │   ├── DEVELOPER.md         # this file
-│   └── ROS2_CONTROL.md     # ros2_control concepts + Lucy implementation
+│   └── ROS2_CONTROL.md      # ros2_control concepts + Lucy implementation
 ├── lucy_bringup/
 ├── lucy_ros2_control/
+├── lucy_config_generator/
 └── camera_ros/
 ```
 
@@ -38,7 +40,7 @@ lucy_ros_packages/
 cd lucy_ws   # or your colcon workspace root
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install \
-  --packages-select lucy_bringup lucy_ros2_control camera_ros
+  --packages-select lucy_bringup lucy_ros2_control lucy_config_generator camera_ros
 source install/setup.bash
 ```
 
@@ -73,8 +75,8 @@ source install/setup.bash
 |------|--------|
 | **Launch** | `ros2 launch lucy_ros2_control control.launch.py` |
 | **Plugin** | `lucy_ros2_control.xml` → `lucy_ros2_control/LucySystemHardware`; C++ implementation under `hardware/`. |
-| **Config** | `config/lucy_controllers.yaml` — must match joint names in **thais_urdf** xacro (`inmoov_ros2_control.xacro`). |
-| **Architecture** | **[doc/ROS2_CONTROL.md](ROS2_CONTROL.md)** — general ros2_control → Lucy topics, YAML, launches, pitfalls. |
+| **Config** | `config/lucy_controllers.yaml` — must match joint names in **thais_urdf** xacro (`inmoov_ros2_control.xacro`) when you maintain controllers here; generated **`thais_urdf`** `controllers.yaml` must stay aligned when using **`lucy_config_generator`**. |
+| **Architecture** | **[docs/ROS2_CONTROL.md](ROS2_CONTROL.md)** — general ros2_control → Lucy topics, YAML, launches, pitfalls. |
 
 **When you change controllers or joints**
 
@@ -89,16 +91,23 @@ source install/setup.bash
 | **Launch** | `ros2 launch camera_ros camera.launch.py` (`fps`, `device`, USB ids, …). |
 | **Tests** | `colcon test --packages-select camera_ros` with `BUILD_TESTING=ON`. |
 
+### `lucy_config_generator`
+
+| Item | Detail |
+|------|--------|
+| **CLI** | `ros2 run lucy_config_generator generate …` (see package **README**). |
+| **Tests** | `colcon test --packages-select lucy_config_generator` — golden outputs for C, xacro, YAML. |
+
 ---
 
 ## 5. CI
 
 `.github/workflows/ci.yml` runs in `osrf/ros:humble-desktop` on **pull_request** and on **push** to **`main` / `master` / `dev`** only (avoids duplicate runs when a PR branch is pushed):
 
-- **`rosdep install --from-paths src`** for `camera_ros`, `lucy_bringup`, `lucy_ros2_control`
+- **`rosdep install --from-paths src`** for `camera_ros`, `lucy_bringup`, `lucy_ros2_control`, `lucy_config_generator`
 - **`colcon build`** with `BUILD_TESTING=ON`
-- **`colcon test`** — ament linters, `camera_ros` pytests, **`lucy_bringup`** launch `py_compile` tests, **`lucy_ros2_control`** YAML tests
-- **`pytest-cov`** — `camera_ros` (`scripts/`), `lucy_bringup` (`launch/`), `lucy_ros2_control` (`test/`) → Cobertura XML + HTML under `ws/build/coverage_reports/`; **Codecov** flag `lucy_ros_packages` (optional **`CODECOV_TOKEN`**)
+- **`colcon test`** — ament linters, `camera_ros` pytests, **`lucy_bringup`** launch `py_compile` tests, **`lucy_ros2_control`** YAML tests, **`lucy_config_generator`** golden tests
+- **`pytest-cov`** — `camera_ros` (`scripts/`), `lucy_bringup` (`launch/`), `lucy_ros2_control` (`test/`), `lucy_config_generator` (`lucy_config_generator/`) → Cobertura XML + HTML under `ws/build/coverage_reports/`; **Codecov** flag `lucy_ros_packages` (optional **`CODECOV_TOKEN`**)
 
 Local commands: **README.md** → *Tests and coverage (local)*.
 
@@ -109,7 +118,7 @@ Local commands: **README.md** → *Tests and coverage (local)*.
 1. New **runtime** dependency → correct `package.xml` in the affected package.
 2. New **launch or config** → `install()` in that package’s `CMakeLists.txt`.
 3. New **topic/service** → document in the package `README.md`.
-4. **Control / joints** → always coordinate with **`thais_urdf`** (see its `doc/DEVELOPER.md`).
+4. **Control / joints** → always coordinate with **`thais_urdf`** (see its `docs/DEVELOPER.md`).
 
 ---
 
