@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+
+
+
+<robot name="inmoov-i2" xmlns:xacro="http://www.ros.org/wiki/xacro">
+<xacro:macro name="servo_motor" params="name joint_name board pin type min_limit max_limit default_pos inverted enabled:=false">
+    <actuator name="${name}" enabled="${enabled}">
+        <joint name="${joint_name}"/>
+        <hardware>
+            <board name="${board}"/>
+            <pin value="${pin}"/>
+            <type value="${type}"/>
+            <limit_lower value="${min_limit}"/>
+            <limit_upper value="${max_limit}"/>
+            <default_position value="${default_pos}"/>
+            <inverted value="${inverted}"/>
+        </hardware>
+    </actuator>
+</xacro:macro>
+
+<xacro:servo_motor name="torso_roll"
+                   joint_name="torso_roll_joint"
+                   board="null"
+                   pin="5"
+                   type="SERVO_TYPE_180"
+                   min_limit="10"
+                   max_limit="170"
+                   default_pos="110"
+                   inverted="false"
+                   enabled="false"/>
+</robot>
