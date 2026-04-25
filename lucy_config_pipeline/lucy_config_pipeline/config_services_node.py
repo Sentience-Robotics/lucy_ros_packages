@@ -7,6 +7,7 @@ import rclpy
 from rclpy.node import Node
 
 from .config_store import ConfigStore
+from .error_format import format_error_lines
 from .validation import urdf_crosscheck, validate_schema
 
 
@@ -94,7 +95,8 @@ class ConfigServicesNode(Node):
             # Keep schema/parse failures in the structured field expected by clients.
             res.success = False
             res.message = "validation failed"
-            res.validation_errors = [str(e)]
+            lines = [line for line in str(e).splitlines() if line.strip()]
+            res.validation_errors = format_error_lines(lines)
         except Exception as e:
             res.success = False
             res.message = str(e)

@@ -11,7 +11,6 @@ def generate_launch_description() -> LaunchDescription:
     node = Node(
         package="lucy_config_pipeline",
         executable="config_pipeline_node",
-        name="lucy_config_pipeline",
         output="screen",
         parameters=[
             {

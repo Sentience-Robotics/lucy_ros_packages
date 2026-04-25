@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import shutil
 import tempfile
@@ -12,6 +13,7 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.node import Node
 
 from .config_store import ConfigStore
+from .error_format import format_error_lines
 from .validation import urdf_crosscheck, validate_schema
 
 
@@ -96,7 +98,14 @@ class PipelineActionServer(Node):
         fb = ConfigurePipeline.Feedback()
         fb.phase = phase
         fb.progress = max(0.0, min(1.0, float(progress)))
-        fb.detail = detail
+        fb.detail = json.dumps(
+            {
+                "phase": phase,
+                "board": board,
+                "progress": fb.progress,
+                "message": detail,
+            }
+        )
         fb.board = board
         goal_handle.publish_feedback(fb)
 
@@ -140,7 +149,7 @@ class PipelineActionServer(Node):
                 self._paths.controller_config,
             )
             if report.errors:
-                result.errors.extend(report.errors)
+                result.errors.extend(format_error_lines(report.errors))
                 result.message = "validation failed"
                 goal_handle.abort()
                 return result
@@ -197,7 +206,9 @@ class PipelineActionServer(Node):
             goal_handle.succeed()
             return result
         except Exception as e:  # pragma: no cover - top-level action guard
-            result.errors.append(str(e))
+            lines = [line for line in str(e).splitlines() if line.strip()]
+            raw = lines if lines else [str(e)]
+            result.errors.extend(format_error_lines(raw))
             result.message = f"pipeline failed: {e}"
             goal_handle.abort()
             return result
