@@ -14,11 +14,14 @@
 
 #include "include/lucy_system.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "hardware_interface/lexical_casts.hpp"
@@ -27,6 +30,33 @@
 
 namespace ros2_control_demo_example_2
 {
+namespace
+{
+constexpr double kPi = 3.14159265358979323846;
+
+double rad_to_deg(double rad)
+{
+  return rad * 180.0 / kPi;
+}
+
+double deg_to_rad(double deg)
+{
+  return deg * kPi / 180.0;
+}
+
+double parse_required_double(
+  const hardware_interface::ComponentInfo & joint,
+  const char * key)
+{
+  const auto it = joint.parameters.find(key);
+  if (it == joint.parameters.end() || it->second.empty()) {
+    throw std::runtime_error(
+            "missing required parameter '" + std::string(key) + "' for joint '" + joint.name + "'");
+  }
+  return std::stod(it->second);
+}
+}  // namespace
+
 hardware_interface::CallbackReturn LucySystemHardware::on_init(
   const hardware_interface::HardwareInfo & info)
 {
@@ -101,6 +131,85 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
     get_logger(), "Publishing joint state on topic '%s' (RELIABLE for micro-ROS default subscriber)",
     publisher_topic.c_str());
 
+  mappings_.clear();
+  mappings_.reserve(info_.joints.size());
+
+  for (std::size_t i = 0; i < info_.joints.size(); ++i) {
+    const auto & joint = info_.joints[i];
+    const auto it_vpin = joint.parameters.find("virtual_pin");
+    if (it_vpin == joint.parameters.end() || it_vpin->second.empty()) {
+      RCLCPP_WARN(
+        get_logger(),
+        "Joint '%s' has no virtual_pin; treated as passive/unmapped for actuator output.",
+        joint.name.c_str());
+      continue;
+    }
+
+    ActuatedJointMapping m{};
+    try {
+      m.joint_index = i;
+      m.virtual_pin = std::stoi(it_vpin->second, nullptr, 10);
+      m.offset_deg = parse_required_double(joint, "offset_deg");
+      m.direction = parse_required_double(joint, "direction");
+      m.scale = parse_required_double(joint, "scale");
+      m.servo_min_deg = parse_required_double(joint, "servo_min_deg");
+      m.servo_max_deg = parse_required_double(joint, "servo_max_deg");
+      m.servo_default_deg = parse_required_double(joint, "servo_default_deg");
+    } catch (const std::exception & e) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Joint '%s' has invalid parameters: %s",
+        joint.name.c_str(),
+        e.what());
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+
+    if (m.virtual_pin < 0) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Joint '%s' has invalid virtual_pin %d (must be >= 0).",
+        joint.name.c_str(),
+        m.virtual_pin);
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+    if (m.direction == 0.0 || m.scale == 0.0) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Joint '%s' has invalid direction/scale (must be non-zero).",
+        joint.name.c_str());
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+    if (m.servo_min_deg > m.servo_max_deg) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Joint '%s' has servo_min_deg > servo_max_deg.",
+        joint.name.c_str());
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+
+    mappings_.push_back(m);
+
+    const double default_joint_rad =
+      deg_to_rad((m.servo_default_deg - m.offset_deg) * m.direction * m.scale);
+    hw_commands_[i] = default_joint_rad;
+    hw_positions_[i] = default_joint_rad;
+  }
+
+  std::sort(
+    mappings_.begin(),
+    mappings_.end(),
+    [](const ActuatedJointMapping & a, const ActuatedJointMapping & b) {
+      return a.virtual_pin < b.virtual_pin;
+    });
+  for (std::size_t i = 1; i < mappings_.size(); ++i) {
+    if (mappings_[i].virtual_pin == mappings_[i - 1].virtual_pin) {
+      RCLCPP_FATAL(
+        get_logger(), "Duplicate virtual_pin %d in hardware '%s'.", mappings_[i].virtual_pin,
+        info_.name.c_str());
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+  }
+
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -164,22 +273,25 @@ hardware_interface::return_type LucySystemHardware::read(
 hardware_interface::return_type ros2_control_demo_example_2::LucySystemHardware::write(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
-  // Publish actuator JointState for micro-ROS: Pico uses position[virtual_pin] for 9 outputs
-  // (see config_*_arm.c). URDF has 10 shoulder/arm joints per arm; omit exactly one per arm so
-  // the stream has 9 entries in bus order.
-  //
-  // Right arm wiring: no servo on URDF right_shoulder_y; shoulder_x is on the bus → omit y only.
-  // Left arm (stock): no separate bus channel for URDF left_shoulder_x (y,z,elbow,…) → omit x.
+  // Firmware reads inputs->position.data[joint->config.virtual_pin] per configured joint.
+  // Build sparse position array by configured virtual_pin.
   sensor_msgs::msg::JointState msg;
   msg.header.stamp = node_->get_clock()->now();
   msg.name.clear();
-  msg.position.reserve(info_.joints.size());
-  for (std::size_t i = 0; i < info_.joints.size(); ++i) {
-    const std::string & joint_name = info_.joints[i].name;
-    if (joint_name == "right_shoulder_y_link_joint" || joint_name == "left_shoulder_y_link_joint") {
-      continue;
-    }
-    msg.position.push_back(hw_commands_[i]);
+
+  if (mappings_.empty()) {
+    joint_publisher_->publish(msg);
+    return hardware_interface::return_type::OK;
+  }
+
+  int max_vp = mappings_.back().virtual_pin;
+  msg.position.assign(static_cast<size_t>(max_vp) + 1U, 0.0);
+
+  for (const auto & m : mappings_) {
+    const double joint_deg = rad_to_deg(hw_commands_[m.joint_index]);
+    const double servo_deg = (joint_deg / (m.direction * m.scale)) + m.offset_deg;
+    const double clamped_deg = std::min(std::max(servo_deg, m.servo_min_deg), m.servo_max_deg);
+    msg.position[static_cast<size_t>(m.virtual_pin)] = deg_to_rad(clamped_deg);
   }
 
   joint_publisher_->publish(msg);
