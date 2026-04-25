@@ -2,7 +2,7 @@
 
 ROS 2 Control for Lucy: hardware interface, controller config, and launch file.
 
-**Architecture (repo-level):** [`../doc/ROS2_CONTROL.md`](../doc/ROS2_CONTROL.md) — how ros2_control maps to Lucy, `/actuators/*`, launches, and pitfalls.
+**Architecture (repo-level):** [`../docs/ROS2_CONTROL.md`](../docs/ROS2_CONTROL.md) — how ros2_control maps to Lucy, `/actuators/*`, launches, and pitfalls.
 
 ## Contents
 

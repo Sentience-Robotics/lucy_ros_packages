@@ -1,0 +1,120 @@
+# Minimal hardware mapping for generator golden tests (#96).
+version: 1
+robot_name: testbot
+
+firmware:
+  source_dir: firmware_stub
+  build_dir: build
+
+controller_manager:
+  update_rate: 100
+
+boards:
+  rp2040_left_arm:
+    serial_id: ""
+    board_class: internal_servo_only
+    firmware_target: pico_micro_ros_left_arm
+    compile_definition: USE_LEFT_ARM
+    topic_actuators: actuators/left_arm
+    topic_sensors: sensors/left_arm
+    controller:
+      name: left_arm_controller
+      type: joint_trajectory_controller/JointTrajectoryController
+  rp2040_right_arm:
+    serial_id: ""
+    board_class: internal_servo_only
+    firmware_target: pico_micro_ros_right_arm
+    compile_definition: USE_RIGHT_ARM
+    topic_actuators: actuators/right_arm
+    topic_sensors: sensors/right_arm
+    controller:
+      name: right_arm_controller
+      type: joint_trajectory_controller/JointTrajectoryController
+  rp2040_torso_head:
+    serial_id: ""
+    board_class: internal_servo_i2c_pwm
+    firmware_target: pico_micro_ros_torso
+    compile_definition: USE_TORSO
+    topic_actuators: actuators/torso
+    topic_sensors: sensors/torso
+    controller:
+      name: torso_head_controller
+      type: joint_trajectory_controller/JointTrajectoryController
+
+actuators:
+  - id: left_a
+    urdf_joint: left_a_joint
+    board: rp2040_left_arm
+    virtual_pin: 0
+    physical_pin: 10
+    servo_type: "270"
+    offset_deg: 0.0
+    direction: 1
+    scale: 1.0
+    servo_min_deg: 0.0
+    servo_max_deg: 270.0
+    servo_default_deg: 135.0
+    enabled: true
+  - id: left_disabled
+    urdf_joint: left_disabled_joint
+    board: rp2040_left_arm
+    virtual_pin: 1
+    physical_pin: 11
+    servo_type: "270"
+    offset_deg: 0.0
+    direction: 1
+    scale: 1.0
+    servo_min_deg: 0.0
+    servo_max_deg: 270.0
+    servo_default_deg: 135.0
+    enabled: false
+  - id: right_a
+    urdf_joint: right_a_joint
+    board: rp2040_right_arm
+    virtual_pin: 0
+    physical_pin: 10
+    servo_type: "270"
+    offset_deg: 0.0
+    direction: 1
+    scale: 1.0
+    servo_min_deg: 0.0
+    servo_max_deg: 270.0
+    servo_default_deg: 135.0
+    enabled: true
+  - id: torso_left_y
+    urdf_joint: left_shoulder_y_link_joint
+    board: rp2040_torso_head
+    virtual_pin: 0
+    physical_pin: 5
+    servo_type: "270"
+    offset_deg: 0.0
+    direction: 1
+    scale: 1.0
+    servo_min_deg: 0.0
+    servo_max_deg: 270.0
+    servo_default_deg: 0.0
+    enabled: true
+  - id: torso_right_y
+    urdf_joint: right_shoulder_y_link_joint
+    board: rp2040_torso_head
+    virtual_pin: 1
+    physical_pin: 6
+    servo_type: "270"
+    offset_deg: 0.0
+    direction: 1
+    scale: 1.0
+    servo_min_deg: 0.0
+    servo_max_deg: 270.0
+    servo_default_deg: 0.0
+    enabled: true
+
+sensors:
+  - id: left_thumb_pressure
+    type: pressure
+    associated_actuator: left_a
+    board: rp2040_left_arm
+    virtual_pin: 0
+    physical_pin: 16
+    min_value: null
+    max_value: null
+    enabled: true
