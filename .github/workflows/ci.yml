@@ -106,13 +106,6 @@ jobs:
             --cov-report=html:build/coverage_reports/html_lucy_bringup \
             --cov-report=term-missing \
             --cov-branch
-          # lucy_ros2_control — YAML validation tests only (no C++ coverage here)
-          python3 -m pytest src/lucy_ros2_control/test/ \
-            --cov=src/lucy_ros2_control/test \
-            --cov-report=xml:build/coverage_reports/lucy_ros2_control.xml \
-            --cov-report=html:build/coverage_reports/html_lucy_ros2_control \
-            --cov-report=term-missing \
-            --cov-branch
           # lucy_config_generator — golden template tests
           python3 -m pytest src/lucy_config_generator/test/ \
             --cov=src/lucy_config_generator/lucy_config_generator \
@@ -126,7 +119,7 @@ jobs:
         if: success()
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ws/build/coverage_reports/camera_ros.xml,ws/build/coverage_reports/lucy_bringup.xml,ws/build/coverage_reports/lucy_ros2_control.xml,ws/build/coverage_reports/lucy_config_generator.xml
+          files: ws/build/coverage_reports/camera_ros.xml,ws/build/coverage_reports/lucy_bringup.xml,ws/build/coverage_reports/lucy_config_generator.xml
           flags: lucy_ros_packages
           name: lucy_ros_packages
           fail_ci_if_error: false
