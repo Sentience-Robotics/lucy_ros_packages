@@ -4,7 +4,7 @@ Service/action layer for the hardware config workflow.
 
 - Config store operations on `config/hardware/` (`active.yaml`, `configs/*.yaml`, backups)
 - Validation (schema + URDF cross-check)
-- `ConfigurePipeline` action phases: validate, generate, build (stub), flash (stub)
+- `ConfigurePipeline` action phases: validate, generate, build (RP2040 cmake/make), flash (stub)
 
 ## Services
 

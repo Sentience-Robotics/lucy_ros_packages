@@ -5,9 +5,10 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 import rclpy
 
-from .config_services_node import ConfigServicesNode
 from .config_store import ConfigStore
-from .pipeline_action_server import PipelineActionServer, PipelinePaths
+from .pipeline.action_server import PipelineActionServer
+from .pipeline.models import PipelinePaths
+from .services.config_services_node import ConfigServicesNode
 
 
 def _infer_robot_source_root(robot_package: str, share_dir: Path) -> Path:
