@@ -49,6 +49,126 @@ def test_schema_rejects_bad_version():
         validate_hardware_yaml(data)
 
 
+def test_schema_rejects_empty_compile_definition():
+    data = _load_mapping()
+    data["boards"]["rp2040_left_arm"]["compile_definition"] = ""
+    with pytest.raises(ValueError, match="compile_definition"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_rejects_empty_controller_name():
+    data = _load_mapping()
+    data["boards"]["rp2040_left_arm"]["controller"]["name"] = ""
+    with pytest.raises(ValueError, match=r"controller\.name"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_rejects_invalid_internal_servo_slots():
+    data = _load_mapping()
+    data["boards"]["rp2040_left_arm"]["internal_servo_slots"] = 0
+    with pytest.raises(ValueError, match="internal_servo_slots must be >= 1"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_rejects_null_virtual_pin():
+    data = _load_mapping()
+    data["actuators"][0]["virtual_pin"] = None
+    with pytest.raises(ValueError, match="virtual_pin must be an integer"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_rejects_servo_min_greater_than_max():
+    data = _load_mapping()
+    data["actuators"][0]["servo_min_deg"] = 10
+    data["actuators"][0]["servo_max_deg"] = 5
+    data["actuators"][0]["servo_default_deg"] = 7
+    with pytest.raises(ValueError, match="servo_min_deg .* must be <= servo_max_deg"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_rejects_physical_pin_above_board_slot_limit():
+    data = _load_mapping()
+    data["boards"]["rp2040_left_arm"]["internal_servo_slots"] = 8
+    data["actuators"][0]["physical_pin"] = 9
+    with pytest.raises(ValueError, match=r"physical_pin 9 out of range 1..8"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_rejects_non_bool_enabled_actuator():
+    data = _load_mapping()
+    data["actuators"][0]["enabled"] = "fal"
+    with pytest.raises(ValueError, match="enabled must be a boolean"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_rejects_non_bool_enabled_sensor():
+    data = _load_mapping()
+    data["sensors"][0]["enabled"] = "fal"
+    with pytest.raises(ValueError, match="enabled must be a boolean"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_rejects_non_numeric_offset_deg():
+    data = _load_mapping()
+    data["actuators"][0]["offset_deg"] = None
+    with pytest.raises(ValueError, match="offset_deg must be numeric"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_rejects_non_unit_direction():
+    data = _load_mapping()
+    data["actuators"][0]["direction"] = 0
+    with pytest.raises(ValueError, match="direction must be -1 or 1"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_rejects_zero_scale():
+    data = _load_mapping()
+    data["actuators"][0]["scale"] = 0
+    with pytest.raises(ValueError, match="scale must be non-zero"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_rejects_empty_sensor_id():
+    data = _load_mapping()
+    data["sensors"][0]["id"] = ""
+    with pytest.raises(ValueError, match=r"sensor .*: id must be a non-empty string"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_rejects_empty_sensor_type():
+    data = _load_mapping()
+    data["sensors"][0]["type"] = ""
+    with pytest.raises(ValueError, match=r"sensor .*: type must be a non-empty string"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_rejects_sensor_min_value_greater_than_max_value():
+    data = _load_mapping()
+    data["sensors"][0]["min_value"] = 2000
+    data["sensors"][0]["max_value"] = 0
+    with pytest.raises(ValueError, match=r"sensor .*: min_value .* must be <= max_value"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_reports_missing_virtual_pin_when_gap_exists():
+    data = _load_mapping()
+    data["actuators"][2]["virtual_pin"] = 3
+    with pytest.raises(ValueError, match=r"board .*: missing virtual_pin indices \[[0-9, ]+\]"):
+        validate_hardware_yaml(data)
+
+
+def test_schema_suppresses_sensor_contiguity_when_sensor_has_item_error():
+    data = _load_mapping()
+    data["sensors"][0]["associated_actuator"] = "does_not_exist"
+    with pytest.raises(ValueError) as exc:
+        validate_hardware_yaml(data)
+    msg = str(exc.value)
+    assert "associated_actuator does_not_exist not found" in msg
+    assert "sensor virtual_pin must be contiguous" not in msg
+    assert "missing sensor virtual_pin indices" not in msg
+
+
 def test_golden_firmware_left_arm():
     data = _load_mapping()
     got = generate_from_xacro_string_for_tests(data, _fixture_urdf_xml(), {"firmware"}, None)[
