@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from lucy_config_pipeline.pipeline import build as pipeline_build
+from src.pipeline import build as pipeline_build
 
 
 def _sample_data() -> dict:

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from lucy_config_pipeline.pipeline import flash as pipeline_flash
+from src.pipeline import flash as pipeline_flash
 
 
 def _sample_data() -> dict:

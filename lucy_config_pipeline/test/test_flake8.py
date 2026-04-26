@@ -11,7 +11,7 @@ def test_flake8():
     pkg_root = Path(__file__).resolve().parents[1]
     targets = [
         str(pkg_root / "setup.py"),
-        str(pkg_root / "lucy_config_pipeline"),
+        str(pkg_root / "src"),
         str(pkg_root / "test"),
     ]
     with warnings.catch_warnings():

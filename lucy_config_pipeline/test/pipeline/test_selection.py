@@ -2,13 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from lucy_config_pipeline.pipeline.selection import (
+from src.pipeline.selection import (
     board_build_plan,
     resolve_firmware_paths,
     resolve_mapping_input,
     select_boards_to_process,
 )
-from lucy_config_pipeline.config_store import ConfigStore
+from src.config_store import ConfigStore
 
 
 def test_resolve_mapping_input_active_and_named(tmp_path: Path):
