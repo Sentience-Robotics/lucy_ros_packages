@@ -12,12 +12,6 @@ _LINE_COL_RE = re.compile(r"line\s+(\d+),\s+column\s+(\d+)")
 
 
 def _pick_field_from_tail(tail: str) -> str:
-    """
-    Best-effort extraction of the offending field from a human-readable error tail.
-
-    "controller.name must be a non-empty string" -> "controller.name"
-    "compile_definition must be a non-empty string" -> "compile_definition"
-    """
     if tail.startswith("missing virtual_pin"):
         return "virtual_pin"
     if tail.startswith("missing sensor virtual_pin"):
@@ -31,16 +25,6 @@ def _pick_field_from_tail(tail: str) -> str:
 
 
 def format_error_line(line: str) -> str:
-    """
-    Convert one validation/error line to a JSON string.
-
-    Output schema:
-    {
-      "field": "boards.rp2040_left_arm.controller.name",
-      "field_path": ["boards", "rp2040_left_arm", "controller", "name"],
-      "message": "controller.name must be a non-empty string"
-    }
-    """
     text = line.strip()
     if not text:
         return json.dumps(
@@ -73,31 +57,23 @@ def format_error_line(line: str) -> str:
         board_id, tail = m.groups()
         field_tail = _pick_field_from_tail(tail)
         field = f"boards.{board_id}.{field_tail}"
-        return json.dumps(
-            {"field": field, "field_path": field.split("."), "message": tail}
-        )
+        return json.dumps({"field": field, "field_path": field.split("."), "message": tail})
 
     m = _ACTUATOR_RE.match(text)
     if m:
         act_id, tail = m.groups()
         field_tail = _pick_field_from_tail(tail)
         field = f"actuators.{act_id}.{field_tail}"
-        return json.dumps(
-            {"field": field, "field_path": field.split("."), "message": tail}
-        )
+        return json.dumps({"field": field, "field_path": field.split("."), "message": tail})
 
     m = _SENSOR_RE.match(text)
     if m:
         sensor_id, tail = m.groups()
         field_tail = _pick_field_from_tail(tail)
         field = f"sensors.{sensor_id}.{field_tail}"
-        return json.dumps(
-            {"field": field, "field_path": field.split("."), "message": tail}
-        )
+        return json.dumps({"field": field, "field_path": field.split("."), "message": tail})
 
-    return json.dumps(
-        {"field": "unknown", "field_path": ["unknown"], "message": text}
-    )
+    return json.dumps({"field": "unknown", "field_path": ["unknown"], "message": text})
 
 
 def format_error_lines(lines: list[str]) -> list[str]:
