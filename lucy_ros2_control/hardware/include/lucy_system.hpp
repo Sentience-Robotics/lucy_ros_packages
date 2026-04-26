@@ -16,6 +16,7 @@
 #define ROS2_CONTROL_DEMO_EXAMPLE_2__DIFFBOT_SYSTEM_HPP_
 
 #include <memory>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -64,6 +65,18 @@ public:
   // rclcpp::Clock::SharedPtr get_clock() const { return clock_; }
 
 private:
+  struct ActuatedJointMapping
+  {
+    std::size_t joint_index;
+    int virtual_pin;
+    double offset_deg;
+    double direction;
+    double scale;
+    double servo_min_deg;
+    double servo_max_deg;
+    double servo_default_deg;
+  };
+
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_publisher_;
   rclcpp::Node::SharedPtr node_;
 
@@ -75,6 +88,8 @@ private:
   std::vector<double> hw_commands_;
   std::vector<double> hw_positions_;
   // std::vector<double> hw_velocities_; // We have no velocity for our servos
+
+  std::vector<ActuatedJointMapping> mappings_;
 };
 
 }  // namespace ros2_control_demo_example_2

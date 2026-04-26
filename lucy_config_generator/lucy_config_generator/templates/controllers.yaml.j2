@@ -19,6 +19,7 @@ joint_state_broadcaster:
 {% for c in controllers %}
 {{ c.name }}:
   ros__parameters:
+    allow_nonzero_velocity_at_trajectory_end: false
     joints:
 {% for j in c.joints %}
       - {{ j }}

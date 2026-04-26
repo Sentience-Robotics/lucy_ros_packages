@@ -95,18 +95,13 @@ python3 -m pytest src/lucy_ros_packages/lucy_bringup/test/ \
   --cov-report=xml:build/coverage_reports/lucy_bringup.xml \
   --cov-report=html:build/coverage_html/lucy_bringup
 
-python3 -m pytest src/lucy_ros_packages/lucy_ros2_control/test/ \
-  --cov=src/lucy_ros_packages/lucy_ros2_control/test \
-  --cov-report=term-missing \
-  --cov-report=xml:build/coverage_reports/lucy_ros2_control.xml \
-  --cov-report=html:build/coverage_html/lucy_ros2_control
 ```
 
-**Meaningful line coverage** is mostly from **`camera_ros/scripts`**; bringup tests only **byte-compile** launch files, and `lucy_ros2_control` tests cover **YAML + Python helpers**, not the C++ hardware plugin.
+**Meaningful line coverage** is mostly from **`camera_ros/scripts`**; bringup tests only **byte-compile** launch files.
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) runs **`rosdep`**, **`colcon build`**, **`colcon test`**, then **`pytest-cov`** over Python tests, producing Cobertura XML under `ws/build/coverage_reports/` for **`camera_ros`**, **`lucy_bringup`**, **`lucy_ros2_control`**, and **`lucy_config_generator`**. Reports are uploaded to [**Codecov**](https://codecov.io) when **`CODECOV_TOKEN`** is set on the repo, and HTML/XML are attached as workflow artifacts (`coverage-lucy_ros_packages`). See [`docs/DEVELOPER.md`](docs/DEVELOPER.md) §5.
+GitHub Actions (`.github/workflows/ci.yml`) runs **`rosdep`**, **`colcon build`**, **`colcon test`**, then **`pytest-cov`** over Python tests, producing Cobertura XML under `ws/build/coverage_reports/` for **`camera_ros`**, **`lucy_bringup`**, and **`lucy_config_generator`**. Reports are uploaded to [**Codecov**](https://codecov.io) when **`CODECOV_TOKEN`** is set on the repo, and HTML/XML are attached as workflow artifacts (`coverage-lucy_ros_packages`). See [`docs/DEVELOPER.md`](docs/DEVELOPER.md) §5.
 
 ## Documentation map
 

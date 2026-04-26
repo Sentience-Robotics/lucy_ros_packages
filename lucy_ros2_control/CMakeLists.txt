@@ -47,11 +47,6 @@ install(
   DESTINATION include/lucy_ros2_control
 )
 
-install(
-  DIRECTORY config launch
-  DESTINATION share/${PROJECT_NAME}/
-)
-
 # install(
 #   DIRECTORY description/launch description/ros2_control description/urdf
 #   DESTINATION share/ros2_control_demo_example_2
@@ -73,12 +68,8 @@ if(BUILD_TESTING)
     ament_cmake_copyright
     ament_cmake_cpplint
   )
-  find_package(ament_cmake_pytest REQUIRED)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
-  ament_add_pytest_test(test_controllers_yaml test/test_controllers_yaml.py
-    TIMEOUT 60
-  )
 endif()
 
 ament_package()

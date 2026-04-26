@@ -18,6 +18,7 @@ joint_state_broadcaster:
 
 left_arm_controller:
   ros__parameters:
+    allow_nonzero_velocity_at_trajectory_end: false
     joints:
       - left_a_joint
       - left_disabled_joint
@@ -28,6 +29,7 @@ left_arm_controller:
 
 right_arm_controller:
   ros__parameters:
+    allow_nonzero_velocity_at_trajectory_end: false
     joints:
       - right_a_joint
     command_interfaces:
@@ -37,6 +39,7 @@ right_arm_controller:
 
 torso_head_controller:
   ros__parameters:
+    allow_nonzero_velocity_at_trajectory_end: false
     joints:
       - left_shoulder_y_link_joint
       - right_shoulder_y_link_joint
