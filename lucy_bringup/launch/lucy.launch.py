@@ -15,12 +15,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Launch file for Lucy Robot System.
+Launch file for Lucy real robot stack.
 
-This launch file starts all core ROS2 components:
+This launch file starts the core real-robot ROS 2 components:
 - Two micro-ROS agents (for left and right arm RP2040 controllers)
 - ros2_control (robot_state_publisher, controller_manager,
-  joint_state_broadcaster, arm controllers)
+  joint_state_broadcaster, left/right arm + torso-head controllers)
 - ROSBridge WebSocket server (for web interface communication)
 - Audio capture and playback nodes (for stereo microphones and speakers)
 - RealSense D435i camera (for vision system with depth sensing)
@@ -180,8 +180,8 @@ def generate_launch_description():
     )
 
     # ros2_control: robot_state_publisher, ros2_control_node, spawners
-    # (joint_state_broadcaster, left/right_arm_controller).
-    # Publishes /actuators/left_arm and /actuators/right_arm for micro-ROS.
+    # (joint_state_broadcaster, left/right_arm_controller, torso_head_controller).
+    # Publishes /actuators/{left_arm,right_arm,torso} for micro-ROS.
     # Started after a delay so micro_ros_agent and rosbridge are up first.
     ros2_control_launch = TimerAction(
         period=3.0,
@@ -189,7 +189,7 @@ def generate_launch_description():
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([
                     PathJoinSubstitution([
-                        FindPackageShare('lucy_ros2_control'),
+                        FindPackageShare('thais_urdf'),
                         'launch',
                         'control.launch.py'
                     ])
@@ -223,9 +223,8 @@ def generate_launch_description():
         # Success message
         LogInfo(msg='✅ All ROS nodes launched successfully!'),
         LogInfo(msg='   - Micro-ROS Agents: right & left arm'),
-        LogInfo(msg='   - ros2_control: /actuators/left_arm, /actuators/right_arm for Picos'),
+        LogInfo(msg='   - ros2_control: /actuators/{left_arm,right_arm,torso}'),
         LogInfo(msg='   - ROSBridge Server: WebSocket ready'),
-        LogInfo(msg='   - Audio System: Capture & playback ready'),
         LogInfo(msg='   - External USB Webcam: Stream ready'),
         LogInfo(msg='   - RealSense D435i: Vision system active'),
         LogInfo(msg='========================================'),
