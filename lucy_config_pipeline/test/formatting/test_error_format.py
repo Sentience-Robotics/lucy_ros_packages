@@ -1,6 +1,6 @@
 import json
 
-from lucy_config_pipeline.error_format import format_error_line
+from src.error_format import format_error_line
 
 
 def test_board_error_formats_to_json_field_path():

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from lucy_config_pipeline.config_store import ConfigStore
+from src.config_store import ConfigStore
 
 
 def test_save_list_activate_delete(tmp_path: Path):

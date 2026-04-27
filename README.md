@@ -9,6 +9,7 @@ ROS 2 **Humble** repository for **Lucy** (Sentience Robotics): runtime bringup, 
 | [**lucy_bringup**](lucy_bringup/) | Jetson-oriented **system launch**: micro-ROS agents, `rosbridge_server`, RealSense, `camera_ros`, delayed [`lucy_ros2_control`](lucy_ros2_control/) bringup. |
 | [**lucy_ros2_control**](lucy_ros2_control/) | **Hardware** `ros2_control` plugin (`LucySystemHardware`), controller YAML, `control.launch.py` for the real robot stack (no RViz/rosbridge in that launch). |
 | [**lucy_config_generator**](lucy_config_generator/) | **Config pipeline**: reads **`thais_urdf`** hardware YAML and emits RP2040 firmware C, `ros2_control` xacro, and `controllers.yaml` (see package README). |
+| [**lucy_config_pipeline**](lucy_config_pipeline/) | **Config store + `ConfigurePipeline` action**: validate YAML, generate artifacts, build/flash RP2040 firmware via `picotool` [README](lucy_config_pipeline/README.md). |
 | [**camera_ros**](camera_ros/) | GStreamer-based **MJPEG** → `sensor_msgs/CompressedImage`; client-aware activation. |
 
 Package names match directories (`<name>` in each `package.xml`).
@@ -24,6 +25,10 @@ Package names match directories (`<name>` in each `package.xml`).
 - **ROS**: [ROS 2 Humble](https://docs.ros.org/en/humble/Installation.html).
 - **Per-package extras**: Jetson-typical USB video and audio stacks for bringup; RealSense SDK stack for `realsense2_camera`; serial devices for micro-ROS. See each package README and `lucy_bringup/REALSENSE.md`.
 
+## Picotool and passwordless sudo
+
+The **`lucy_config_pipeline`** flash phase runs **`sudo picotool`**. Copy-paste **sudoers** setup (Ubuntu 22.04) lives in **[lucy_config_pipeline/README.md — Passwordless sudo for picotool](lucy_config_pipeline/README.md#passwordless-sudo-for-picotool)** (same repository; no `../` path).
+
 ## Building (colcon workspace)
 
 Treat this repository as **`src/lucy_ros_packages`** (clone the contents into that folder) **or** clone in place so that packages are direct children of your workspace `src/`:
@@ -31,7 +36,7 @@ Treat this repository as **`src/lucy_ros_packages`** (clone the contents into th
 ```text
 lucy_ws/
 └── src/
-    ├── lucy_ros_packages/    # this repo: lucy_bringup, lucy_ros2_control, lucy_config_generator, camera_ros
+    ├── lucy_ros_packages/    # this repo: lucy_bringup, lucy_ros2_control, lucy_config_generator, lucy_config_pipeline, camera_ros
     └── thais_urdf/           # robot description + sim launches (separate repo)
 ```
 
@@ -41,7 +46,7 @@ Example build:
 source /opt/ros/humble/setup.bash
 cd lucy_ws
 colcon build --symlink-install \
-  --packages-select lucy_bringup lucy_ros2_control lucy_config_generator camera_ros
+  --packages-select lucy_bringup lucy_ros2_control lucy_config_generator lucy_config_pipeline camera_ros
 source install/setup.bash
 ```
 
@@ -49,7 +54,7 @@ To include simulation/description from the other repo:
 
 ```bash
 colcon build --symlink-install \
-  --packages-select lucy_bringup lucy_ros2_control lucy_config_generator camera_ros thais_urdf
+  --packages-select lucy_bringup lucy_ros2_control lucy_config_generator lucy_config_pipeline camera_ros thais_urdf
 ```
 
 ## Quick start
@@ -113,6 +118,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs **`rosdep`**, **`colcon build`*
 | [lucy_ros2_control/README.md](lucy_ros2_control/README.md) | Control stack quick start |
 | [**docs/ROS2_CONTROL.md**](docs/ROS2_CONTROL.md) | **ros2_control** — general concepts + Lucy (`LucySystemHardware`, topics, launches) |
 | [**lucy_config_generator/README.md**](lucy_config_generator/README.md) | Hardware YAML → firmware C, `ros2_control` xacro, controllers |
+| [**lucy_config_pipeline/README.md**](lucy_config_pipeline/README.md) | Config services + pipeline action (build/flash); [passwordless sudo for picotool](lucy_config_pipeline/README.md#passwordless-sudo-for-picotool) |
 | [camera_ros/README.md](camera_ros/README.md) | Camera topics, parameters, troubleshooting |
 
 If these repos live under **`lucy_ws`**, see **`lucy_ws/docs/developer_lucy_packages.md`** (index into each repo’s `docs/DEVELOPER.md`) and **`lucy_ws/docs/simulation_and_visualization.md`** (full-stack pipeline).

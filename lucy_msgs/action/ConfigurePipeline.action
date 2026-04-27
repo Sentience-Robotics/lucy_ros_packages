@@ -15,5 +15,5 @@ string[] errors               # per-phase error messages (if any)
 # Feedback
 string phase                  # "validate", "generate", "build", "flash"
 string board                  # current board being processed (empty if N/A)
-float32 progress              # 0.0 to 1.0 within the current phase
+float64 progress              # 0.0 to 1.0 within the current phase (float64 avoids 0.1 float32 echo noise)
 string detail                 # human-readable status message

@@ -8,6 +8,7 @@
   <license>GPL-3.0</license>
 
   <depend>rclpy</depend>
+  <depend>std_msgs</depend>
   <depend>rcl_interfaces</depend>
   <depend>lucy_msgs</depend>
   <depend>ament_index_python</depend>

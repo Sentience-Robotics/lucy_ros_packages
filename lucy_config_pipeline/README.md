@@ -4,7 +4,39 @@ Service/action layer for the hardware config workflow.
 
 - Config store operations on `config/hardware/` (`active.yaml`, `configs/*.yaml`, backups)
 - Validation (schema + URDF cross-check)
-- `ConfigurePipeline` action phases: validate, generate, build (RP2040 cmake/make), flash (stub)
+- `ConfigurePipeline` action phases: validate, generate, build (RP2040 cmake/make), flash (`picotool`)
+
+## Flash phase (RP2040)
+
+After a successful build, each selected board with a non-empty `serial_id` is flashed using:
+
+- `sudo picotool load <absolute_path_to_uf2> -f --ser <serial_id>` — the pipeline passes the UF2 under `firmware.build_dir`. **`picotool load` reboots the Pico into application mode**; a separate `picotool reboot` is **not** run (it races USB re-enumeration and often fails with exit **249**).
+- Optional **1 s** pause after load (env `LUCY_PIPELINE_FLASH_POST_LOAD_DELAY_SEC`, set `0` to disable) before polling USB.
+- Wait (default **5 s**, env `LUCY_PIPELINE_FLASH_WAIT_SEC`) until `/dev/serial/by-id/*` contains the serial (case-insensitive substring match).
+- Wait for the next `std_msgs/msg/Int32` on the uptime topic (default **`/uptime_publisher`**, up to **30 s**, env `LUCY_PIPELINE_FLASH_UPTIME_WAIT_SEC`) so micro-ROS is publishing after boot.
+
+Shell aliases (e.g. `pico-flash-right-arm`) must use a **full path** to the `.uf2` or **`cd`** to the firmware `build/` directory first; otherwise picotool fails with **Could not open 'pico_micro_ros_right_arm.uf2'**.
+
+Override the uptime topic with env `LUCY_PIPELINE_UPTIME_TOPIC` or optional per-board YAML key `topic_uptime` (relative names get a leading `/`).
+
+Per-board isolation: one board failing load or wait steps does not stop other boards. Boards that failed **build** are skipped for flash; if **every** selected board failed build, the action aborts before flash.
+
+### Passwordless sudo for picotool
+
+`picotool` runs under **sudo**. On Ubuntu 22.04, for unattended flashing install a **sudoers drop-in** that whitelists the **`picotool` binary only** (use the path from `command -v picotool` / `which picotool`):
+
+```bash
+PICOTOOL="$(command -v picotool)"
+test -n "$PICOTOOL" && test -x "$PICOTOOL" || { echo "install picotool first"; exit 1; }
+
+echo "$USER ALL=(ALL) NOPASSWD: $PICOTOOL" | sudo tee /etc/sudoers.d/99-lucy-picotool
+sudo chmod 0440 /etc/sudoers.d/99-lucy-picotool
+sudo visudo -cf /etc/sudoers.d/99-lucy-picotool
+```
+
+If `visudo -cf` prints **syntax OK**, the rule is valid. Replace **`$USER`** with the account that runs the ROS node if you run this from a root shell where `$USER` is `root`. If `picotool` moves to another path, update the rule or re-run the block.
+
+Env: `LUCY_PIPELINE_FLASH_TIMEOUT_SEC` (default **120**) caps each `sudo picotool …` subprocess.
 
 ## Services
 

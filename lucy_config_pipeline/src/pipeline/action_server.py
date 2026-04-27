@@ -16,8 +16,14 @@ from ..config_store import ConfigStore
 from ..error_format import format_error_lines
 from ..validation import urdf_crosscheck, validate_schema
 from .build import run_build_phase
+from .flash import (
+    flash_picotool_timeout_seconds,
+    flash_uptime_wait_seconds,
+    flash_usb_wait_seconds,
+    run_flash_phase,
+)
 from .models import PipelinePaths
-from .selection import resolve_mapping_input, select_boards_to_process
+from .selection import board_build_plan, resolve_mapping_input, select_boards_to_process
 
 
 class PipelineActionServer(Node):
@@ -63,12 +69,13 @@ class PipelineActionServer(Node):
     ) -> None:
         fb = ConfigurePipeline.Feedback()
         fb.phase = phase
-        fb.progress = max(0.0, min(1.0, float(progress)))
+        q = round(max(0.0, min(1.0, float(progress))), 2)
+        fb.progress = q
         fb.detail = json.dumps(
             {
                 "phase": phase,
                 "board": board,
-                "progress": fb.progress,
+                "progress": q,
                 "message": detail,
             }
         )
@@ -149,30 +156,68 @@ class PipelineActionServer(Node):
                     feedback=lambda **kwargs: self._feedback(goal_handle, **kwargs),
                     log_error=lambda msg: self.get_logger().error(msg),
                 )
-                if build_failed_boards:
+
+            plan_boards = [b for b, _ in board_build_plan(data, boards)]
+            plan_set = set(plan_boards)
+            built_ok = {b for b in plan_boards if b not in set(build_failed_boards)}
+
+            if not goal.dry_run and goal.build_only and build_failed_boards:
+                result.errors.extend(
+                    format_error_lines(
+                        [f"build failed for boards: {', '.join(sorted(build_failed_boards))}"]
+                    )
+                )
+                result.message = "build failed"
+                goal_handle.abort()
+                return result
+
+            if not goal.dry_run and plan_set and not built_ok:
+                result.errors.extend(
+                    format_error_lines(
+                        [f"build failed for boards: {', '.join(sorted(build_failed_boards))}"]
+                    )
+                )
+                result.message = "build failed"
+                goal_handle.abort()
+                return result
+
+            if build_failed_boards:
+                result.errors.extend(
+                    format_error_lines(
+                        [f"build failed for boards: {', '.join(sorted(build_failed_boards))}"]
+                    )
+                )
+
+            flash_failed: list[str] = []
+            if not goal.dry_run and not goal.build_only:
+                flash_failed, flashed_ok = run_flash_phase(
+                    data=data,
+                    selected_boards=boards,
+                    boards_built_ok=built_ok,
+                    workspace_src=self._paths.workspace_src,
+                    picotool_timeout_seconds=flash_picotool_timeout_seconds(),
+                    usb_wait_seconds=flash_usb_wait_seconds(),
+                    uptime_wait_seconds=flash_uptime_wait_seconds(),
+                    node=self,
+                    feedback=lambda **kwargs: self._feedback(goal_handle, **kwargs),
+                    log_error=lambda msg: self.get_logger().error(msg),
+                )
+                result.boards_flashed = flashed_ok
+                if flash_failed:
                     result.errors.extend(
                         format_error_lines(
-                            [f"build failed for boards: {', '.join(sorted(build_failed_boards))}"]
+                            [f"flash failed for boards: {', '.join(sorted(flash_failed))}"]
                         )
                     )
-                    result.message = "build failed"
+                    result.message = "flash failed"
                     goal_handle.abort()
                     return result
 
-            if not goal.dry_run and not goal.build_only:
-                self._feedback(
-                    goal_handle,
-                    phase="flash",
-                    progress=0.0,
-                    detail="flash phase is a stub",
-                )
-                if boards:
-                    result.boards_flashed = sorted(boards)
-                else:
-                    result.boards_flashed = sorted(data.get("boards", {}).keys())
-
             result.success = True
-            result.message = "pipeline completed"
+            if build_failed_boards:
+                result.message = "pipeline completed with partial build failure"
+            else:
+                result.message = "pipeline completed"
             goal_handle.succeed()
             return result
         except Exception as e:  # pragma: no cover - top-level action guard

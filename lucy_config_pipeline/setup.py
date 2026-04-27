@@ -20,7 +20,7 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "config_pipeline_node = lucy_config_pipeline.main:main",
+            "config_pipeline_node = src.main:main",
         ],
     },
 )

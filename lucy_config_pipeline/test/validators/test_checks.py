@@ -1,4 +1,4 @@
-from lucy_config_pipeline.validation import ValidationReport, parse_yaml_text
+from src.validation import ValidationReport, parse_yaml_text
 
 
 def test_parse_yaml_mapping():

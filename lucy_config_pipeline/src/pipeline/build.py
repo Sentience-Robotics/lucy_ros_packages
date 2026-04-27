@@ -40,6 +40,7 @@ def run_build_phase(
             cwd=paths.build_dir,
             timeout_seconds=timeout_seconds,
             feedback=feedback,
+            stream_progress=step_idx / total_steps,
         )
     step_idx += 1
 
@@ -59,6 +60,7 @@ def run_build_phase(
                 cwd=paths.build_dir,
                 timeout_seconds=timeout_seconds,
                 feedback=feedback,
+                stream_progress=step_idx / total_steps,
             )
             uf2 = paths.build_dir / f"{target}.uf2"
             if not uf2.exists():
@@ -92,6 +94,7 @@ def _run_command(
     cwd: Path,
     timeout_seconds: int,
     feedback: Callable[..., None],
+    stream_progress: float = 0.0,
 ) -> None:
     process = subprocess.Popen(
         cmd,
@@ -108,7 +111,7 @@ def _run_command(
         if not text:
             continue
         if emitted < 200:
-            feedback(phase=phase, progress=0.0, detail=text, board=board)
+            feedback(phase=phase, progress=stream_progress, detail=text, board=board)
         emitted += 1
     try:
         return_code = process.wait(timeout=timeout_seconds)
