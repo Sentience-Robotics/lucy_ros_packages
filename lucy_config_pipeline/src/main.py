@@ -65,6 +65,7 @@ def main() -> None:
     store.ensure_layout()
 
     services_node = ConfigServicesNode(
+        robot_package=robot_package,
         config_store=store,
         urdf_xacro=paths.urdf_xacro,
         base_path=paths.base_path,

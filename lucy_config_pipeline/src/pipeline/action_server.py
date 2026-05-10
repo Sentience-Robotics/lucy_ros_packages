@@ -212,6 +212,8 @@ class PipelineActionServer(Node):
                     result.message = "flash failed"
                     goal_handle.abort()
                     return result
+                if flashed_ok:
+                    self._store.record_flashed_preset(result.config_name)
 
             result.success = True
             if build_failed_boards:

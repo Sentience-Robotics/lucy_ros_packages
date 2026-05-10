@@ -16,6 +16,8 @@
   <exec_depend>camera_ros</exec_depend>
   <exec_depend>audio_common</exec_depend>
   <exec_depend>realsense2_camera</exec_depend>
+  <exec_depend>lucy_config_pipeline</exec_depend>
+  <exec_depend>thais_urdf</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 

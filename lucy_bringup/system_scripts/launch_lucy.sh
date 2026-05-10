@@ -5,8 +5,10 @@
 set -e  # Exit on error
 
 SESSION_NAME="lucy"
-WORKSPACE="$HOME/lucy_ws"
-WEB_DIR="$HOME/web_control_panel"
+_SCRIPT_DIR="${0:A:h}"
+source "${_SCRIPT_DIR}/lucy_workspace.zsh.inc"
+WORKSPACE="${LUCY_WORKSPACE}"
+WEB_DIR="${LUCY_CONTROL_PANEL_DIR}"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -51,7 +53,7 @@ fi
 
 # Check if web directory exists
 if [ ! -d "$WEB_DIR" ]; then
-    echo -e "${YELLOW}⚠️  Web directory not found: $WEB_DIR${NC}"
+    echo -e "${YELLOW}⚠️  Control panel dir not found: $WEB_DIR${NC}"
     echo "Web interface will not be started."
     WEB_AVAILABLE=false
 else
