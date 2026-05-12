@@ -15,12 +15,14 @@ class ConfigServicesNode(Node):
     def __init__(
         self,
         *,
+        robot_package: str,
         config_store: ConfigStore,
         urdf_xacro: Path,
         base_path: Path,
         controller_config: Path,
     ):
         super().__init__("lucy_config_services")
+        self._robot_package = robot_package
         self._store = config_store
         self._urdf_xacro = urdf_xacro
         self._base_path = base_path
@@ -55,11 +57,27 @@ class ConfigServicesNode(Node):
             else:
                 res.config_name = self._store.get_active_name()
                 res.config_yaml = self._store.read_active_yaml()
+            res.robot_package = self._robot_package
+            res.flashed_config_name = self._store.get_flashed_name()
+            res.flashed_at = self._store.get_flashed_at()
             res.success = True
             res.message = "ok"
+        except FileNotFoundError:
+            res.success = False
+            res.message = "Configuration not found"
+            res.robot_package = self._robot_package
+            res.config_name = ""
+            res.config_yaml = ""
+            res.flashed_config_name = ""
+            res.flashed_at = ""
         except Exception as e:
             res.success = False
             res.message = str(e)
+            res.robot_package = self._robot_package
+            res.config_name = ""
+            res.config_yaml = ""
+            res.flashed_config_name = ""
+            res.flashed_at = ""
         return res
 
     def _on_save_config(
@@ -123,6 +141,7 @@ class ConfigServicesNode(Node):
 def main() -> None:  # pragma: no cover
     rclpy.init()
     node = ConfigServicesNode(
+        robot_package="thais_urdf",
         config_store=ConfigStore(Path(".")),
         urdf_xacro=Path("inmoov.urdf.xacro"),
         base_path=Path("."),

@@ -7,9 +7,17 @@ System launch files and scripts for the Lucy robot on NVIDIA Jetson AGX Orin.
 This package provides a unified way to launch all components of the Lucy robot system:
 - Two micro-ROS agents (for RP2040 controllers on left and right arms)
 - ROSBridge WebSocket server (for web interface communication)
+- **lucy_config_pipeline** (hardware YAML `config/get` / `config/save` and ConfigurePipeline — used by the control panel Configuration page)
 - Audio capture and playback nodes (for stereo microphones and speakers)
 - Intel RealSense D435i camera (for vision system with depth sensing)
 - Web control panel interface
+
+Launch arguments:
+
+| Argument | Default | Meaning |
+|----------|---------|---------|
+| `robot_package` | `thais_urdf` | Robot package for `ros2_control` and config pipeline paths |
+| `config_dir` | *(empty)* | Optional absolute override for hardware YAML dir (otherwise `<robot_package>/config/hardware`) |
 
 ## Building
 
@@ -23,11 +31,13 @@ source install/setup.bash
 
 ### Using the tmux Launcher (Recommended for Development)
 
+Scripts resolve the colcon workspace as: **`LUCY_WS`** (if set and the directory exists), else from the script install path (`install/lib/lucy_bringup`) or source layout (`…/lucy_bringup/system_scripts`), else **`~/lucy_ws`**. The Vite app is started from **`${WORKSPACE}/src/lucy_control_panel`**.
+
 ```bash
 # Launch everything
 ~/launch_lucy.sh
 
-# Check system status
+# Check system status (includes config pipeline + control panel probes)
 ~/check_lucy.sh
 
 # Stop everything
@@ -45,7 +55,14 @@ ros2 launch lucy_bringup lucy.launch.py
 
 # Launch with custom devices
 ros2 launch lucy_bringup lucy.launch.py device0:=/dev/ttyACM2 device1:=/dev/ttyACM3
+
+# Another robot package (must provide description/, config/hardware/, control.launch.py)
+ros2 launch lucy_bringup lucy.launch.py robot_package:=my_robot_urdf
 ```
+
+### Stopping (`stop_lucy.sh`)
+
+The script interrupts the ROS pane (twice), stops the web pane, kills the tmux session, then runs a **fallback cleanup** for common orphaned processes (`rosbridge_websocket*`, `micro_ros_agent`). It does **not** guarantee **every** node on the machine is gone: nodes started in another shell, another host on the same `ROS_DOMAIN_ID`, or names that linger briefly in discovery can still appear in `ros2 node list`. Use `ros2 node list` after stopping; if needed, stop other terminals or match remaining processes with `pgrep -af ros2`.
 
 ## Architecture
 
@@ -159,7 +176,8 @@ lucy_bringup/
 ├── system_scripts/
 │   ├── launch_lucy.sh          # tmux launcher
 │   ├── stop_lucy.sh            # Graceful shutdown
-│   └── check_lucy.sh           # Health check
+│   ├── check_lucy.sh           # Health check
+│   └── lucy_workspace.zsh.inc  # Shared workspace path resolution (sourced by scripts)
 ├── CMakeLists.txt
 ├── package.xml
 ├── README.md                    # This file
@@ -168,10 +186,15 @@ lucy_bringup/
 
 ## Symlinks
 
-For convenience, symlinks are created in `/home/dev/`:
-- `~/launch_lucy.sh` → `lucy_ws/src/lucy_ros_packages/lucy_bringup/system_scripts/launch_lucy.sh`
-- `~/stop_lucy.sh` → `lucy_ws/src/lucy_ros_packages/lucy_bringup/system_scripts/stop_lucy.sh`
-- `~/check_lucy.sh` → `lucy_ws/src/lucy_ros_packages/lucy_bringup/system_scripts/check_lucy.sh`
+Point `~/` scripts at the **installed** copies so they sit next to `lucy_workspace.zsh.inc` (required for path resolution):
+
+```bash
+ln -sf ~/lucy_ws/install/lib/lucy_bringup/launch_lucy.sh ~/launch_lucy.sh
+ln -sf ~/lucy_ws/install/lib/lucy_bringup/stop_lucy.sh ~/stop_lucy.sh
+ln -sf ~/lucy_ws/install/lib/lucy_bringup/check_lucy.sh ~/check_lucy.sh
+```
+
+You can also run them directly from `lucy_ws/src/lucy_ros_packages/lucy_bringup/system_scripts/` after `colcon build`.
 
 ## Camera System
 

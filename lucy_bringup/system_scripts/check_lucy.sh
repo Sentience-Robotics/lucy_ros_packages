@@ -3,7 +3,10 @@
 # Health check script for Lucy Robot System
 
 SESSION_NAME="lucy"
-WORKSPACE="$HOME/lucy_ws"
+_SCRIPT_DIR="${0:A:h}"
+source "${_SCRIPT_DIR}/lucy_workspace.zsh.inc"
+WORKSPACE="${LUCY_WORKSPACE}"
+CONTROL_PANEL_DIR="${LUCY_CONTROL_PANEL_DIR}"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -15,6 +18,8 @@ NC='\033[0m' # No Color
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}🔍 Checking Lucy Robot System Status...${NC}"
 echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}Workspace:${NC} ${WORKSPACE}"
+echo -e "${BLUE}Control panel:${NC} ${CONTROL_PANEL_DIR}"
 echo ""
 
 # Check if tmux session exists
@@ -71,6 +76,28 @@ else
     echo -e "${RED}❌ Not found${NC}"
 fi
 
+# Hardware config pipeline (from lucy_bringup lucy.launch.py)
+echo -n "  Config services (YAML): "
+if ros2 service list 2>/dev/null | grep -Fq "/config/get"; then
+    echo -e "${GREEN}✅ config/get OK${NC}"
+else
+    echo -e "${RED}❌ /config/get missing${NC}"
+fi
+
+echo -n "  Config pipeline node: "
+if ros2 node list 2>/dev/null | grep -Fq "/lucy_config_pipeline"; then
+    echo -e "${GREEN}✅ lucy_config_pipeline${NC}"
+else
+    echo -e "${YELLOW}⚠️  lucy_config_pipeline not in node list${NC}"
+fi
+
+echo -n "  ConfigurePipeline action: "
+if ros2 action list 2>/dev/null | grep -Fq "/configure_pipeline"; then
+    echo -e "${GREEN}✅ /configure_pipeline${NC}"
+else
+    echo -e "${YELLOW}⚠️  /configure_pipeline not listed${NC}"
+fi
+
 # Check realsense node
 echo -n "  Realsense Camera:         "
 if ros2 node list 2>/dev/null | grep -q "realsense2_camera"; then
@@ -93,6 +120,36 @@ if ros2 node list 2>/dev/null | grep -q "audio_player"; then
 else
     echo -e "${RED}❌ Not found${NC}"
 fi
+
+echo ""
+echo -e "${BLUE}Control panel (Vite):${NC}"
+
+echo -n "  Repository on disk:      "
+if [[ -d "${CONTROL_PANEL_DIR}" ]]; then
+    echo -e "${GREEN}✅ ${CONTROL_PANEL_DIR}${NC}"
+else
+    echo -e "${RED}❌ Missing (expected under src/lucy_control_panel)${NC}"
+fi
+
+# Match vite.config default (VITE_PORT or 5000)
+_VITE_PORT="${VITE_PORT:-5000}"
+echo -n "  Dev server (port ${_VITE_PORT}): "
+if command -v curl >/dev/null 2>&1; then
+    _code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 "http://127.0.0.1:${_VITE_PORT}/" 2>/dev/null)" || _code=""
+    [[ -z "${_code}" ]] && _code="000"
+    if [[ "${_code}" == 2* ]] || [[ "${_code}" == 3* ]]; then
+        echo -e "${GREEN}✅ HTTP ${_code} (pane 1 / yarn dev)${NC}"
+    else
+        echo -e "${YELLOW}⚠️  No response (HTTP ${_code}) — start via launch pane 1 if needed${NC}"
+    fi
+else
+    if command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -q ":${_VITE_PORT}\\b"; then
+        echo -e "${GREEN}✅ Port ${_VITE_PORT} listening${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Install curl or ss to probe; port ${_VITE_PORT} not detected listening${NC}"
+    fi
+fi
+unset _VITE_PORT _code
 
 echo ""
 echo -e "${BLUE}Camera Services:${NC}"

@@ -18,6 +18,10 @@ REQUIRED_ROOT = (
     "actuators",
     "sensors",
 )
+
+# Optional root lists merged for URDF cross-check exclusions (synonyms allowed).
+URDF_PASSIVE_LIST_KEYS = ("passive_urdf_joints", "urdf_passive", "urdf_passive_joints")
+URDF_IGNORE_LIST_KEYS = ("ignore_urdf_joints", "urdf_ignore", "urdf_ignore_joints")
 REQUIRED_ACTUATOR = (
     "id",
     "urdf_joint",
@@ -436,6 +440,24 @@ def validate_hardware_yaml(data: dict[str, Any]) -> None:
             raise ValueError(f"missing root key: {key}")
     if data["version"] != 1:
         raise ValueError("version must be 1")
+
+    cand = data.get("candidate_urdf_joints")
+    if cand is not None:
+        if not isinstance(cand, list):
+            raise ValueError("candidate_urdf_joints must be a list of strings")
+        for i, item in enumerate(cand):
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError(f"candidate_urdf_joints[{i}] must be a non-empty string")
+
+    for passive_key in URDF_PASSIVE_LIST_KEYS + URDF_IGNORE_LIST_KEYS:
+        plist = data.get(passive_key)
+        if plist is None:
+            continue
+        if not isinstance(plist, list):
+            raise ValueError(f"{passive_key} must be a list of strings")
+        for i, item in enumerate(plist):
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError(f"{passive_key}[{i}] must be a non-empty string")
 
     boards: dict[str, Any] = data["boards"]
     if not isinstance(boards, dict) or not boards:

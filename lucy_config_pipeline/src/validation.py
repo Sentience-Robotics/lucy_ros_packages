@@ -7,7 +7,11 @@ from typing import Any
 import yaml
 
 from lucy_config_generator.generate import urdf_joint_names
-from lucy_config_generator.schema import validate_hardware_yaml
+from lucy_config_generator.schema import (
+    URDF_IGNORE_LIST_KEYS,
+    URDF_PASSIVE_LIST_KEYS,
+    validate_hardware_yaml,
+)
 
 
 @dataclass(frozen=True)
@@ -41,14 +45,20 @@ def urdf_crosscheck(
 
     actuated = set()
     for a in data.get("actuators", []):
-        j = str(a.get("urdf_joint", ""))
+        j = str(a.get("urdf_joint", "")).strip()
         if not j:
             continue
         actuated.add(j)
         if j not in joints:
             errors.append(f"actuator {a.get('id')}: urdf_joint {j!r} not in URDF")
 
-    for j in sorted(joints - actuated):
+    passive_ignore = set()
+    for key in URDF_PASSIVE_LIST_KEYS + URDF_IGNORE_LIST_KEYS:
+        for x in data.get(key) or []:
+            if isinstance(x, str) and x.strip():
+                passive_ignore.add(x.strip())
+
+    for j in sorted(joints - actuated - passive_ignore):
         warnings.append(f"URDF joint {j!r} is not mapped to any actuator")
 
     return ValidationReport(errors=errors, warnings=warnings)

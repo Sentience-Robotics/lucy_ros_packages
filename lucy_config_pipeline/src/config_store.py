@@ -39,15 +39,41 @@ class ConfigStore:
         self.ensure_layout()
         return sorted(p.stem for p in self.named_dir.glob("*.yaml"))
 
-    def get_active_name(self) -> str:
+    def read_active_meta(self) -> dict:
         if not self.active_meta_yaml.is_file():
-            return "default"
-        data = yaml.safe_load(self.active_meta_yaml.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            name = str(data.get("name", "")).strip()
-            if name:
-                return name
-        return "default"
+            return {}
+        raw = self.active_meta_yaml.read_text(encoding="utf-8").strip()
+        if not raw:
+            return {}
+        data = yaml.safe_load(raw)
+        return data if isinstance(data, dict) else {}
+
+    def _write_active_meta(self, meta: dict) -> None:
+        """Persist known keys only; preserves stable key order matching checked-in YAML style."""
+        self.ensure_layout()
+        lines: list[str] = []
+        for key in ("name", "activated_at", "flashed_name", "flashed_at"):
+            val = str(meta.get(key, "")).strip()
+            if val:
+                lines.append(f'{key}: "{val}"')
+        self.active_meta_yaml.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+
+    def get_active_name(self) -> str:
+        data = self.read_active_meta()
+        name = str(data.get("name", "")).strip()
+        return name if name else "default"
+
+    def get_flashed_name(self) -> str:
+        return str(self.read_active_meta().get("flashed_name", "")).strip()
+
+    def get_flashed_at(self) -> str:
+        return str(self.read_active_meta().get("flashed_at", "")).strip()
+
+    def record_flashed_preset(self, config_name: str) -> None:
+        meta = self.read_active_meta()
+        meta["flashed_name"] = config_name
+        meta["flashed_at"] = f"{datetime.utcnow().isoformat()}Z"
+        self._write_active_meta(meta)
 
     def _named_path(self, config_name: str) -> Path:
         if not config_name or "/" in config_name or ".." in config_name:
@@ -85,10 +111,10 @@ class ConfigStore:
             shutil.copy2(self.active_yaml, self.backups_dir / f"{backup_name}.yaml")
 
         shutil.copy2(src, self.active_yaml)
-        self.active_meta_yaml.write_text(
-            f'name: "{config_name}"\nactivated_at: "{datetime.utcnow().isoformat()}Z"\n',
-            encoding="utf-8",
-        )
+        meta = self.read_active_meta()
+        meta["name"] = config_name
+        meta["activated_at"] = f"{datetime.utcnow().isoformat()}Z"
+        self._write_active_meta(meta)
         return backup_name
 
     def delete(self, config_name: str) -> None:
