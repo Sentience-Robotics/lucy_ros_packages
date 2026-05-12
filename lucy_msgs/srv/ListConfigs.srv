@@ -1,0 +1,6 @@
+string robot_package
+---
+bool success
+string message
+string active_config
+string[] config_names

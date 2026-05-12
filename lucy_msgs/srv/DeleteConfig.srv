@@ -1,0 +1,5 @@
+string robot_package
+string config_name
+---
+bool success
+string message

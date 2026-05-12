@@ -1,0 +1,9 @@
+string robot_package
+string config_name
+string config_yaml
+bool activate
+---
+bool success
+string message
+string[] validation_errors
+string[] urdf_warnings
