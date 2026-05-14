@@ -15,13 +15,14 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Launch file for Lucy Robot System.
+Launch file for Lucy real robot stack.
 
-This launch file starts all core ROS2 components:
+This launch file starts the core real-robot ROS 2 components:
 - Two micro-ROS agents (for left and right arm RP2040 controllers)
 - ros2_control (robot_state_publisher, controller_manager,
-  joint_state_broadcaster, arm controllers)
+  joint_state_broadcaster, left/right arm + torso-head controllers)
 - ROSBridge WebSocket server (for web interface communication)
+- lucy_config_pipeline (hardware YAML services + configure action for the panel)
 - Audio capture and playback nodes (for stereo microphones and speakers)
 - RealSense D435i camera (for vision system with depth sensing)
 - External USB webcam (for additional vision stream)
@@ -137,6 +138,21 @@ def generate_launch_description():
         description='Audio playback device index (-1 for default)'
     )
 
+    robot_package_arg = DeclareLaunchArgument(
+        'robot_package',
+        default_value='thais_urdf',
+        description='Robot description package: ros2_control launch + lucy_config_pipeline paths',
+    )
+
+    config_dir_arg = DeclareLaunchArgument(
+        'config_dir',
+        default_value='',
+        description=(
+            'Override hardware config directory for lucy_config_pipeline '
+            '(empty = <robot_package>/config/hardware)'
+        ),
+    )
+
     # Create subsystem nodes using helper functions
     micro_ros_nodes = create_micro_ros_nodes(
         LaunchConfiguration('device0'),
@@ -155,6 +171,21 @@ def generate_launch_description():
         cmd=['ros2', 'launch', 'rosbridge_server', 'rosbridge_websocket_launch.xml'],
         output='screen',
         shell=True
+    )
+
+    # Hardware config services (config/get, config/save, …) + ConfigurePipeline action
+    config_pipeline_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('lucy_config_pipeline'),
+                'launch',
+                'config_pipeline.launch.py',
+            ])
+        ]),
+        launch_arguments=[
+            ('robot_package', LaunchConfiguration('robot_package')),
+            ('config_dir', LaunchConfiguration('config_dir')),
+        ],
     )
 
     # External USB webcam (camera_ros package)
@@ -180,8 +211,8 @@ def generate_launch_description():
     )
 
     # ros2_control: robot_state_publisher, ros2_control_node, spawners
-    # (joint_state_broadcaster, left/right_arm_controller).
-    # Publishes /actuators/left_arm and /actuators/right_arm for micro-ROS.
+    # (joint_state_broadcaster, left/right_arm_controller, torso_head_controller).
+    # Publishes /actuators/{left_arm,right_arm,torso} for micro-ROS.
     # Started after a delay so micro_ros_agent and rosbridge are up first.
     ros2_control_launch = TimerAction(
         period=3.0,
@@ -189,9 +220,9 @@ def generate_launch_description():
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([
                     PathJoinSubstitution([
-                        FindPackageShare('lucy_ros2_control'),
+                        FindPackageShare(LaunchConfiguration('robot_package')),
                         'launch',
-                        'control.launch.py'
+                        'control.launch.py',
                     ])
                 ])
             )
@@ -205,6 +236,8 @@ def generate_launch_description():
         audio_sample_rate_arg,
         audio_capture_device_arg,
         audio_playback_device_arg,
+        robot_package_arg,
+        config_dir_arg,
 
         # Startup message
         LogInfo(msg='========================================'),
@@ -215,6 +248,7 @@ def generate_launch_description():
         # Launch all subsystems
         *micro_ros_nodes,  # Unpack micro-ROS nodes
         rosbridge_server,
+        config_pipeline_launch,
         # *audio_nodes,  # Unpack audio nodes (currently disabled)
         camera_launch,  # External USB webcam
         realsense_launch,  # RealSense D435i camera
@@ -223,9 +257,9 @@ def generate_launch_description():
         # Success message
         LogInfo(msg='✅ All ROS nodes launched successfully!'),
         LogInfo(msg='   - Micro-ROS Agents: right & left arm'),
-        LogInfo(msg='   - ros2_control: /actuators/left_arm, /actuators/right_arm for Picos'),
+        LogInfo(msg='   - ros2_control: /actuators/{left_arm,right_arm,torso}'),
         LogInfo(msg='   - ROSBridge Server: WebSocket ready'),
-        LogInfo(msg='   - Audio System: Capture & playback ready'),
+        LogInfo(msg='   - lucy_config_pipeline: config services + ConfigurePipeline'),
         LogInfo(msg='   - External USB Webcam: Stream ready'),
         LogInfo(msg='   - RealSense D435i: Vision system active'),
         LogInfo(msg='========================================'),

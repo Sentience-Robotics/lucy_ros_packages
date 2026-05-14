@@ -2,7 +2,7 @@
 
 ROS 2 **Humble**. This document explains **ros2_control**, and how it is implemented in Lucy: hardware plugin, topics, YAML, and launch files. URDF / xacro for `ros2_control` blocks live in **`thais_urdf`**; plugin binary and controller YAML live in **`lucy_ros2_control`**.
 
-**Related:** [`doc/DEVELOPER.md`](DEVELOPER.md) (repo layout, CI), [`../thais_urdf/doc/DEVELOPER.md`](../../thais_urdf/doc/DEVELOPER.md) (URDF, sim launches).
+**Related:** [`DEVELOPER.md`](DEVELOPER.md) (repo layout, CI), [`../thais_urdf/docs/DEVELOPER.md`](../../thais_urdf/docs/DEVELOPER.md) (URDF, sim launches).
 
 ---
 
@@ -30,7 +30,7 @@ Clients (MoveIt, web panel, scripts) usually talk to **controllers** (e.g. `Foll
 | **`control.launch.py`** | `lucy_ros2_control` | `robot_state_publisher` + `ros2_control_node` + spawners. |
 | **`<ros2_control>` xacro** | `thais_urdf` | Two **system** blocks (left/right arms), plugin `LucySystemHardware` or `gz_ros2_control/GazeboSimSystem`, plus `publisher_topic` / `node_name` params. |
 
-Joint names in **`lucy_controllers.yaml`** must match the URDF / xacro **exactly**. Change YAML and **`thais_urdf`** together (see `doc/DEVELOPER.md` checklist).
+Joint names in **`lucy_controllers.yaml`** (or generated **`thais_urdf`** `controllers.yaml`) must match the URDF / xacro **exactly**. Change YAML and **`thais_urdf`** together (see `docs/DEVELOPER.md` checklist).
 
 ---
 
@@ -122,4 +122,4 @@ If managers or spawners failed, commands are published but **nothing updates com
 | `lucy_ros2_control/launch/control.launch.py` | Bringup snippet |
 | `thais_urdf/inmoov/ros2_control/inmoov_ros2_control.xacro` | Plugins + joint list per arm |
 
-Maintainers: align changes with **`../../thais_urdf/doc/DEVELOPER.md`** and control-panel joint config when joint order or names change.
+Maintainers: align changes with **`../../thais_urdf/docs/DEVELOPER.md`** and control-panel joint config when joint order or names change.
