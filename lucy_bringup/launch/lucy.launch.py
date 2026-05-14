@@ -15,37 +15,60 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Launch file for Lucy real robot stack.
+Single entry bringup for Lucy: web panel APIs, optional real peripherals, RViz, Gazebo.
 
-This launch file starts the core real-robot ROS 2 components:
-- Two micro-ROS agents (for left and right arm RP2040 controllers)
-- ros2_control (robot_state_publisher, controller_manager,
-  joint_state_broadcaster, left/right arm + torso-head controllers)
-- ROSBridge WebSocket server (for web interface communication)
-- lucy_config_pipeline (hardware YAML services + configure action for the panel)
-- Audio capture and playback nodes (for stereo microphones and speakers)
-- RealSense D435i camera (for vision system with depth sensing)
-- External USB webcam (for additional vision stream)
+Always starts ``web_ros_api`` (rosbridge + lucy_config_pipeline).
 
-Optimized for NVIDIA Jetson AGX Orin.
+Invalid combinations raise at launch parse time (clear ``RuntimeError``).
+
+Arguments:
+---------
+- ``real`` (default ``true``): micro-ROS agents, USB webcam, RealSense. When false, those
+  nodes are not constructed (``OpaqueFunction``), so e.g. Docker without ``micro_ros_agent``
+  can run ``real:=false``.
+- ``rviz`` (default ``false``): RViz2 (real/sim time set per mode). With ``gazebo:=true``,
+  forwarded as ``start_rviz`` to ``thais_urdf/gazebo.launch.py`` (no second RViz).
+- ``gazebo`` (default ``false``): GZ Sim stack from ``thais_urdf``; requires ``real:=false``.
+
 """
 
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch_ros.actions import Node
 from launch.actions import (
     DeclareLaunchArgument,
-    ExecuteProcess,
+    GroupAction,
     IncludeLaunchDescription,
     LogInfo,
+    OpaqueFunction,
     TimerAction,
 )
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
-def create_micro_ros_nodes(device0, device1):
-    """Create micro-ROS agent nodes for left and right arms."""
+def _validate_lucy_launch(context):
+    gz = LaunchConfiguration('gazebo').perform(context).lower()
+    real = LaunchConfiguration('real').perform(context).lower()
+
+    def _is_true(val):
+        return val in ('true', '1', 'yes')
+
+    if _is_true(gz) and _is_true(real):
+        raise RuntimeError(
+            'lucy.launch.py: gazebo:=true conflicts with real:=true. '
+            'Use real:=false for simulation (e.g. '
+            '"ros2 launch lucy_bringup lucy.launch.py gazebo:=true real:=false").'
+        )
+    return []
+
+
+def create_micro_ros_nodes(device0: str, device1: str):
+    """Create micro-ROS agent nodes for left and right arms (device paths resolved)."""
     return [
         Node(
             package='micro_ros_agent',
@@ -70,78 +93,65 @@ def create_micro_ros_nodes(device0, device1):
     ]
 
 
-def create_audio_nodes(sample_rate, capture_device, playback_device):
-    """Create audio capture and playback nodes."""
-    return [
-        Node(
-            package='audio_common',
-            executable='audio_capturer_node',
-            name='audio_capturer',
-            output='screen',
-            respawn=True,
-            respawn_delay=2.0,
-            parameters=[{
-                'format': 8,  # paInt16 (PortAudio format constant)
-                'channels': 2,  # Stereo microphones
-                'rate': sample_rate,
-                'chunk': 1024,  # Buffer size
-                'device': capture_device,
-                'frame_id': 'audio_capture'
-            }]
+def _real_hardware_stack(context, *args, **kwargs):
+    """Build micro-ROS / camera / RealSense only when ``real`` is true (lazy package load)."""
+    real = LaunchConfiguration('real').perform(context).lower().strip()
+    if real not in ('true', '1', 'yes'):
+        return []
+    device0 = LaunchConfiguration('device0').perform(context)
+    device1 = LaunchConfiguration('device1').perform(context)
+    out = list(create_micro_ros_nodes(device0, device1))
+    cam_share = get_package_share_directory('camera_ros')
+    out.append(IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(cam_share, 'launch', 'camera.launch.py')
         ),
-        Node(
-            package='audio_common',
-            executable='audio_player_node',
-            name='audio_player',
-            output='screen',
-            respawn=True,
-            respawn_delay=2.0,
-            parameters=[{
-                'channels': 2,  # Stereo speakers
-                'device': playback_device
-            }]
-        )
-    ]
+    ))
+    lucy_share = get_package_share_directory('lucy_bringup')
+    out.append(IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(lucy_share, 'launch', 'realsense.launch.py')
+        ),
+    ))
+    return out
 
 
 def generate_launch_description():
     """Generate launch description for Lucy robot system."""
-    # Declare launch arguments for flexibility
     device0_arg = DeclareLaunchArgument(
         'device0',
         default_value='/dev/ttyACM0',
-        description='Serial device for first micro-ROS agent (right arm)'
+        description='Serial device for first micro-ROS agent (right arm)',
     )
 
     device1_arg = DeclareLaunchArgument(
         'device1',
         default_value='/dev/ttyACM1',
-        description='Serial device for second micro-ROS agent (left arm)'
+        description='Serial device for second micro-ROS agent (left arm)',
     )
 
-    # Audio launch arguments
     audio_sample_rate_arg = DeclareLaunchArgument(
         'audio_sample_rate',
         default_value='48000',
-        description='Audio sample rate in Hz (e.g., 44100, 48000)'
+        description='Audio sample rate in Hz (e.g., 44100, 48000)',
     )
 
     audio_capture_device_arg = DeclareLaunchArgument(
         'audio_capture_device',
         default_value='-1',
-        description='Audio capture device index (-1 for default)'
+        description='Audio capture device index (-1 for default)',
     )
 
     audio_playback_device_arg = DeclareLaunchArgument(
         'audio_playback_device',
         default_value='-1',
-        description='Audio playback device index (-1 for default)'
+        description='Audio playback device index (-1 for default)',
     )
 
     robot_package_arg = DeclareLaunchArgument(
         'robot_package',
         default_value='thais_urdf',
-        description='Robot description package: ros2_control launch + lucy_config_pipeline paths',
+        description='Robot package: control.launch.py + config paths + RViz config',
     )
 
     config_dir_arg = DeclareLaunchArgument(
@@ -153,33 +163,47 @@ def generate_launch_description():
         ),
     )
 
-    # Create subsystem nodes using helper functions
-    micro_ros_nodes = create_micro_ros_nodes(
-        LaunchConfiguration('device0'),
-        LaunchConfiguration('device1')
+    real_arg = DeclareLaunchArgument(
+        'real',
+        default_value='true',
+        description='If true: micro-ROS agents, USB webcam, RealSense',
     )
 
-    # Audio nodes are created but currently disabled
-    # audio_nodes = create_audio_nodes(
-    #     LaunchConfiguration('audio_sample_rate'),
-    #     LaunchConfiguration('audio_capture_device'),
-    #     LaunchConfiguration('audio_playback_device')
-    # )
-
-    # ROSBridge WebSocket Server (for web interface)
-    rosbridge_server = ExecuteProcess(
-        cmd=['ros2', 'launch', 'rosbridge_server', 'rosbridge_websocket_launch.xml'],
-        output='screen',
-        shell=True
+    rviz_arg = DeclareLaunchArgument(
+        'rviz',
+        default_value='false',
+        description='If true: RViz (or start_rviz when gazebo:=true)',
     )
 
-    # Hardware config services (config/get, config/save, …) + ConfigurePipeline action
-    config_pipeline_launch = IncludeLaunchDescription(
+    gazebo_arg = DeclareLaunchArgument(
+        'gazebo',
+        default_value='false',
+        description='If true: thais_urdf gazebo sim (requires real:=false)',
+    )
+
+    share = get_package_share_directory('thais_urdf')
+    default_base = os.path.join(share, 'description')
+    default_urdf = os.path.join(default_base, 'urdf', 'inmoov.urdf.xacro')
+
+    urdf_path_arg = DeclareLaunchArgument(
+        'urdf_path',
+        default_value=default_urdf,
+        description='Forwarded to thais_urdf gazebo.launch.py when gazebo:=true',
+    )
+    base_path_arg = DeclareLaunchArgument(
+        'base_path',
+        default_value=default_base,
+        description='Forwarded to thais_urdf gazebo.launch.py when gazebo:=true',
+    )
+
+    validate = OpaqueFunction(function=_validate_lucy_launch)
+
+    web_ros_api_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
-                FindPackageShare('lucy_config_pipeline'),
+                FindPackageShare('lucy_bringup'),
                 'launch',
-                'config_pipeline.launch.py',
+                'web_ros_api.launch.py',
             ])
         ]),
         launch_arguments=[
@@ -188,49 +212,73 @@ def generate_launch_description():
         ],
     )
 
-    # External USB webcam (camera_ros package)
-    camera_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([
-                FindPackageShare('camera_ros'),
-                'launch',
-                'camera.launch.py'
-            ])
-        ])
+    real_hardware = OpaqueFunction(function=_real_hardware_stack)
+
+    ros2_control_launch = GroupAction(
+        condition=UnlessCondition(LaunchConfiguration('gazebo')),
+        actions=[
+            TimerAction(
+                period=3.0,
+                actions=[
+                    IncludeLaunchDescription(
+                        PythonLaunchDescriptionSource([
+                            PathJoinSubstitution([
+                                FindPackageShare(LaunchConfiguration('robot_package')),
+                                'launch',
+                                'control.launch.py',
+                            ])
+                        ]),
+                    ),
+                ],
+            ),
+        ],
     )
 
-    # RealSense D435i Camera
-    realsense_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([
-                FindPackageShare('lucy_bringup'),
-                'launch',
-                'realsense.launch.py'
-            ])
-        ])
+    rviz_config = PathJoinSubstitution([
+        FindPackageShare(LaunchConfiguration('robot_package')),
+        'config',
+        'inmoov_rviz.rviz',
+    ])
+    rviz_real = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='screen',
+        arguments=['--display-config', rviz_config],
+        parameters=[{'use_sim_time': False}],
+    )
+    rviz_only_when_not_gazebo = GroupAction(
+        condition=IfCondition(LaunchConfiguration('rviz')),
+        actions=[
+            GroupAction(
+                condition=UnlessCondition(LaunchConfiguration('gazebo')),
+                actions=[rviz_real],
+            ),
+        ],
     )
 
-    # ros2_control: robot_state_publisher, ros2_control_node, spawners
-    # (joint_state_broadcaster, left/right_arm_controller, torso_head_controller).
-    # Publishes /actuators/{left_arm,right_arm,torso} for micro-ROS.
-    # Started after a delay so micro_ros_agent and rosbridge are up first.
-    ros2_control_launch = TimerAction(
-        period=3.0,
+    gazebo_sim = GroupAction(
+        condition=IfCondition(LaunchConfiguration('gazebo')),
         actions=[
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([
                     PathJoinSubstitution([
-                        FindPackageShare(LaunchConfiguration('robot_package')),
+                        FindPackageShare('thais_urdf'),
                         'launch',
-                        'control.launch.py',
+                        'gazebo.launch.py',
                     ])
-                ])
-            )
-        ]
+                ]),
+                launch_arguments=[
+                    ('urdf_path', LaunchConfiguration('urdf_path')),
+                    ('base_path', LaunchConfiguration('base_path')),
+                    ('robot_package', LaunchConfiguration('robot_package')),
+                    ('start_rviz', LaunchConfiguration('rviz')),
+                ],
+            ),
+        ],
     )
 
     return LaunchDescription([
-        # Launch arguments
         device0_arg,
         device1_arg,
         audio_sample_rate_arg,
@@ -238,29 +286,19 @@ def generate_launch_description():
         audio_playback_device_arg,
         robot_package_arg,
         config_dir_arg,
-
-        # Startup message
+        real_arg,
+        rviz_arg,
+        gazebo_arg,
+        urdf_path_arg,
+        base_path_arg,
+        validate,
         LogInfo(msg='========================================'),
-        LogInfo(msg='🤖 Starting Lucy Robot System...'),
+        LogInfo(msg='Starting lucy_bringup lucy.launch.py'),
         LogInfo(msg='========================================'),
-        LogInfo(msg='Note: Audio underrun warnings are normal when no audio is published'),
-
-        # Launch all subsystems
-        *micro_ros_nodes,  # Unpack micro-ROS nodes
-        rosbridge_server,
-        config_pipeline_launch,
-        # *audio_nodes,  # Unpack audio nodes (currently disabled)
-        camera_launch,  # External USB webcam
-        realsense_launch,  # RealSense D435i camera
-        ros2_control_launch,  # robot_state_publisher + ros2_control + spawners (after 3s delay)
-
-        # Success message
-        LogInfo(msg='✅ All ROS nodes launched successfully!'),
-        LogInfo(msg='   - Micro-ROS Agents: right & left arm'),
-        LogInfo(msg='   - ros2_control: /actuators/{left_arm,right_arm,torso}'),
-        LogInfo(msg='   - ROSBridge Server: WebSocket ready'),
-        LogInfo(msg='   - lucy_config_pipeline: config services + ConfigurePipeline'),
-        LogInfo(msg='   - External USB Webcam: Stream ready'),
-        LogInfo(msg='   - RealSense D435i: Vision system active'),
+        web_ros_api_launch,
+        real_hardware,
+        ros2_control_launch,
+        rviz_only_when_not_gazebo,
+        gazebo_sim,
         LogInfo(msg='========================================'),
     ])

@@ -82,12 +82,12 @@ Simulation (`use_gazebo_sim:=true`) uses **`gz_ros2_control/GazeboSimSystem`** i
 
 | Launch | ros2_control | Typical extras |
 |--------|--------------|----------------|
-| **`ros2 launch lucy_bringup lucy.launch.py`** | Yes (after **3 s** delay via `control.launch.py`) | micro-ROS agents, rosbridge, cameras, RealSense |
+| **`ros2 launch lucy_bringup lucy.launch.py`** | Yes (after **3 s** delay when not sim) | Always **`web_ros_api`**; **`real`** → micro-ROS + cameras; **`rviz`**; **`gazebo:=true` `real:=false`** → sim |
 | **`ros2 launch lucy_ros2_control control.launch.py`** | Yes | Minimal: `robot_state_publisher` only |
-| **`ros2 launch thais_urdf rviz.launch.py`** | Yes | RViz, rosbridge |
-| **`ros2 launch thais_urdf gazebo.launch.py`** | Yes (sim plugins) | Gazebo, RViz, rosbridge |
+| **`ros2 launch thais_urdf control.launch.py`** + **`rviz_standalone`** | Yes | Two processes: control stack, then RViz only (no rosbridge) |
+| **`ros2 launch thais_urdf gazebo.launch.py`** | Yes (sim plugins) | Gazebo; optional RViz via **`start_rviz`** (no rosbridge) |
 
-`lucy.launch.py` starts **`lucy_ros2_control`** **after** micro-ROS agents and rosbridge so serial and the web socket are up before the control node spikes load.
+`lucy.launch.py` starts **`web_ros_api`** first, then (when **`real:=true`**) micro-ROS agents, then after **3 s** includes **`thais_urdf`** **`control.launch.py`** when **`gazebo:=false`**, so serial and the web socket are up before the control node spikes load.
 
 For **RViz alone** next to a running Jetson stack, see **`thais_urdf`** README: **`rviz_standalone.launch.py`**.
 

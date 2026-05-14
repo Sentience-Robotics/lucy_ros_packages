@@ -6,7 +6,7 @@ ROS 2 **Humble** repository for **Lucy** (Sentience Robotics): runtime bringup, 
 
 | Package | One-line role |
 |---------|----------------|
-| [**lucy_bringup**](lucy_bringup/) | Jetson-oriented **system launch**: micro-ROS agents, `rosbridge_server`, RealSense, `camera_ros`, delayed [`lucy_ros2_control`](lucy_ros2_control/) bringup. |
+| [**lucy_bringup**](lucy_bringup/) | Jetson **system launch**: micro-ROS agents, **`web_ros_api`** (rosbridge + **`lucy_config_pipeline`**), RealSense, `camera_ros`, delayed [`lucy_ros2_control`](lucy_ros2_control/) bringup; **`lucy_*_development`** composes the web stack with **`thais_urdf`** RViz/Gazebo. |
 | [**lucy_ros2_control**](lucy_ros2_control/) | **Hardware** `ros2_control` plugin (`LucySystemHardware`), controller YAML, `control.launch.py` for the real robot stack (no RViz/rosbridge in that launch). |
 | [**lucy_config_generator**](lucy_config_generator/) | **Config pipeline**: reads **`thais_urdf`** hardware YAML and emits RP2040 firmware C, `ros2_control` xacro, and `controllers.yaml` (see package README). |
 | [**lucy_config_pipeline**](lucy_config_pipeline/) | **Config store + `ConfigurePipeline` action**: validate YAML, generate artifacts, build/flash RP2040 firmware via `picotool` [README](lucy_config_pipeline/README.md). |
@@ -16,7 +16,7 @@ Package names match directories (`<name>` in each `package.xml`).
 
 ## How this repo fits the platform
 
-- **Robot model, RViz, Gazebo, and “combo” launches** (real or sim + rosbridge) live in the sibling repo **[thais_urdf](https://github.com/Sentience-Robotics/thais_urdf)** (or your fork), package name `thais_urdf`. `lucy_ros2_control` expects URDF/xacro and meshes from that tree when using default paths.
+- **Robot model, RViz, and Gazebo** live in the sibling repo **[thais_urdf](https://github.com/Sentience-Robotics/thais_urdf)** (package name `thais_urdf`). **`lucy_bringup`** owns **rosbridge + hardware config** (**`web_ros_api.launch.py`**) and **`lucy.launch.py`** (composition via **`real`**, **`rviz`**, **`gazebo`**). `lucy_ros2_control` expects URDF/xacro and meshes from **`thais_urdf`** when using default paths.
 - **Web control panel** and teleop semantics are **not** in this repo; they consume the same topics/controllers documented in lucy_ws docs.
 
 ## Requirements
