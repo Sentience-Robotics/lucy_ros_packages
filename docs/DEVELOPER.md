@@ -129,5 +129,5 @@ Local commands: **README.md** → *Tests and coverage (local)*.
 | Full Jetson stack | `ros2 launch lucy_bringup lucy.launch.py` |
 | Control stack only | `ros2 launch lucy_ros2_control control.launch.py` (requires **`thais_urdf`** installed in overlay — provides default URDF share) |
 | USB camera | `ros2 launch camera_ros camera.launch.py` |
-
-RViz / Gazebo combo launches live in **`thais_urdf`**.
+| RViz / Gazebo + web panel | **`lucy_bringup`** **`lucy.launch.py`** with **`rviz`**, **`gazebo`**, **`real`** (see **`lucy_ws/README.md`**) |
+| URDF + RViz/Gazebo without web | **`thais_urdf`** **`control.launch.py`** + **`rviz_standalone.launch.py`**, or **`gazebo.launch.py`** |

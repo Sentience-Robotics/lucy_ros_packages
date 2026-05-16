@@ -4,20 +4,18 @@ System launch files and scripts for the Lucy robot on NVIDIA Jetson AGX Orin.
 
 ## Overview
 
-This package provides a unified way to launch all components of the Lucy robot system:
-- Two micro-ROS agents (for RP2040 controllers on left and right arms)
-- ROSBridge WebSocket server (for web interface communication)
-- **lucy_config_pipeline** (hardware YAML `config/get` / `config/save` and ConfigurePipeline — used by the control panel Configuration page)
-- Audio capture and playback nodes (for stereo microphones and speakers)
-- Intel RealSense D435i camera (for vision system with depth sensing)
-- Web control panel interface
+**`lucy.launch.py`** is the **single main entry**: it **always** includes **`web_ros_api.launch.py`** (rosbridge + **lucy_config_pipeline** for the control panel). Optional pieces are controlled by launch arguments (defaults match “full Jetson stack without RViz or Gazebo”):
 
-Launch arguments:
+| Argument | Default | When true / meaning |
+|----------|---------|---------------------|
+| **`real`** | `true` | micro-ROS agents (serial arms), USB webcam (**`camera_ros`**), RealSense |
+| **`rviz`** | `false` | RViz2 with **`robot_package`** RViz config (`use_sim_time:=false`). If **`gazebo:=true`**, forwarded as **`start_rviz`** to **`thais_urdf/gazebo.launch.py`** (no duplicate RViz). |
+| **`gazebo`** | `false` | Include **`thais_urdf/gazebo.launch.py`**. **Requires `real:=false`** or launch aborts with **`RuntimeError`**. |
+| **`robot_package`** | `thais_urdf` | **`control.launch.py`**, config paths, RViz config share |
+| **`config_dir`** | *(empty)* | Override hardware YAML dir for **lucy_config_pipeline** |
+| **`urdf_path`**, **`base_path`** | *(see launch file)* | Forwarded to **`thais_urdf`** Gazebo when **`gazebo:=true`** |
 
-| Argument | Default | Meaning |
-|----------|---------|---------|
-| `robot_package` | `thais_urdf` | Robot package for `ros2_control` and config pipeline paths |
-| `config_dir` | *(empty)* | Optional absolute override for hardware YAML dir (otherwise `<robot_package>/config/hardware`) |
+Audio nodes are not wired in **`lucy.launch.py`** today (reserved for future use).
 
 ## Building
 
@@ -50,13 +48,20 @@ Scripts resolve the colcon workspace as: **`LUCY_WS`** (if set and the directory
 # Source workspace
 source ~/lucy_ws/install/setup.zsh
 
-# Launch only ROS nodes (no web interface)
+# Default Jetson + panel (no RViz / no Gazebo)
 ros2 launch lucy_bringup lucy.launch.py
 
-# Launch with custom devices
-ros2 launch lucy_bringup lucy.launch.py device0:=/dev/ttyACM2 device1:=/dev/ttyACM3
+# Jetson + RViz + panel
+ros2 launch lucy_bringup lucy.launch.py rviz:=true
 
-# Another robot package (must provide description/, config/hardware/, control.launch.py)
+# Dev + panel + control + RViz (no micro-ROS / cameras)
+ros2 launch lucy_bringup lucy.launch.py real:=false rviz:=true
+
+# Gazebo sim + panel (``rviz:=false`` = headless Gazebo)
+ros2 launch lucy_bringup lucy.launch.py gazebo:=true real:=false
+
+# Custom serial devices or robot package
+ros2 launch lucy_bringup lucy.launch.py device0:=/dev/ttyACM2 device1:=/dev/ttyACM3
 ros2 launch lucy_bringup lucy.launch.py robot_package:=my_robot_urdf
 ```
 
@@ -101,16 +106,9 @@ The script interrupts the ROS pane (twice), stops the web pane, kills the tmux s
 
 ## Launch Arguments
 
-The `lucy.launch.py` file accepts the following arguments:
+**`lucy.launch.py`:** `device0`, `device1`, `robot_package`, `config_dir`, **`real`**, **`rviz`**, **`gazebo`**, **`urdf_path`**, **`base_path`** (see **Overview** table). **`gazebo:=true`** with **`real:=true`** aborts at parse time.
 
-- `device0` - Serial device for right arm (default: `/dev/ttyACM0`)
-- `device1` - Serial device for left arm (default: `/dev/ttyACM1`)
-- `realsense_serial` - RealSense camera serial number (default: `''` = auto-detect)
-
-Audio launch arguments (passed to `audio.launch.py`):
-- `sample_rate` - Audio sample rate in Hz (default: `48000`)
-- `capture_device` - Audio capture device index (default: `-1` for default)
-- `playback_device` - Audio playback device index (default: `-1` for default)
+**`realsense.launch.py`** is included as-is when **`real:=true`**; tune that file or wrap it if you need serial overrides.
 
 ## System Requirements
 
@@ -171,8 +169,9 @@ These are informational warnings, not errors. The system continues to function n
 ```
 lucy_bringup/
 ├── launch/
-│   ├── lucy.launch.py          # Main ROS2 launch file
-│   └── realsense.launch.py     # RealSense D435i camera launch file
+│   ├── lucy.launch.py                    # Main entry (``real``, ``rviz``, ``gazebo``, …)
+│   ├── web_ros_api.launch.py             # rosbridge + lucy_config_pipeline only
+│   └── realsense.launch.py               # RealSense D435i camera launch file
 ├── system_scripts/
 │   ├── launch_lucy.sh          # tmux launcher
 │   ├── stop_lucy.sh            # Graceful shutdown
