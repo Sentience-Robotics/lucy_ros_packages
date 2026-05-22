@@ -46,7 +46,7 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Command
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -195,6 +195,10 @@ def generate_launch_description():
         default_value=default_base,
         description='Forwarded to thais_urdf gazebo.launch.py when gazebo:=true',
     )
+    urdf_path = LaunchConfiguration("urdf_path")
+    base_path = LaunchConfiguration("base_path")
+    thais_urdf_pkg = get_package_share_directory("thais_urdf")
+    controller_config_path = os.path.join(thais_urdf_pkg, "config", "controllers.yaml")
 
     validate = OpaqueFunction(function=_validate_lucy_launch)
 
@@ -212,7 +216,75 @@ def generate_launch_description():
         ],
     )
 
+
+
+    robot_description = Command([
+        "xacro ", urdf_path,
+        " base_path:=", base_path,
+        " use_gazebo_sim:=true",
+        " controller_config:=", controller_config_path,
+    ])
+    robot_description_dict = {"robot_description": robot_description}
+
+    robot_state_publisher = Node(
+        package = 'robot_state_publisher',
+        executable = 'robot_state_publisher',
+        name = 'robot_state_publisher',
+        output = 'screen',
+        parameters=[robot_description_dict, {"use_sim_time": True}],
+    )
+
+    joint_state_publisher = Node(
+        package = 'joint_state_publisher',
+        executable = 'joint_state_publisher',
+        name = 'joint_state_publisher',
+        output = 'screen',
+        parameters=[{'use_sim_time': False}]
+    )
+
+
+
     real_hardware = OpaqueFunction(function=_real_hardware_stack)
+    use_sim_time = LaunchConfiguration('gazebo')
+
+    rviz = GroupAction(
+        condition=IfCondition(LaunchConfiguration('rviz')),
+        actions=[
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource([
+                    PathJoinSubstitution([
+                        FindPackageShare('thais_urdf'),
+                        'launch',
+                        'rviz.launch.py',
+                        ])
+                    ]),
+                    launch_arguments = [
+                        ('use_sim_time', use_sim_time),
+                    ]
+                ),
+            ],
+        )
+
+    gazebo = GroupAction(
+        condition=IfCondition(LaunchConfiguration('gazebo')),
+        actions=[
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource([
+                    PathJoinSubstitution([
+                        FindPackageShare('thais_urdf'),
+                        'launch',
+                        'gazebo.launch.py',
+                    ])
+                ]),
+                launch_arguments=[
+                    ('urdf_path', LaunchConfiguration('urdf_path')),
+                    ('base_path', LaunchConfiguration('base_path')),
+                    ('robot_package', LaunchConfiguration('robot_package')),
+                    ('use_sim_time', use_sim_time),
+                ],
+            ),
+        ],
+    )
 
     ros2_control_launch = GroupAction(
         condition=UnlessCondition(LaunchConfiguration('gazebo')),
@@ -234,49 +306,7 @@ def generate_launch_description():
         ],
     )
 
-    rviz_config = PathJoinSubstitution([
-        FindPackageShare(LaunchConfiguration('robot_package')),
-        'config',
-        'inmoov_rviz.rviz',
-    ])
-    rviz_real = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        output='screen',
-        arguments=['--display-config', rviz_config],
-        parameters=[{'use_sim_time': False}],
-    )
-    rviz_only_when_not_gazebo = GroupAction(
-        condition=IfCondition(LaunchConfiguration('rviz')),
-        actions=[
-            GroupAction(
-                condition=UnlessCondition(LaunchConfiguration('gazebo')),
-                actions=[rviz_real],
-            ),
-        ],
-    )
 
-    gazebo_sim = GroupAction(
-        condition=IfCondition(LaunchConfiguration('gazebo')),
-        actions=[
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource([
-                    PathJoinSubstitution([
-                        FindPackageShare('thais_urdf'),
-                        'launch',
-                        'gazebo.launch.py',
-                    ])
-                ]),
-                launch_arguments=[
-                    ('urdf_path', LaunchConfiguration('urdf_path')),
-                    ('base_path', LaunchConfiguration('base_path')),
-                    ('robot_package', LaunchConfiguration('robot_package')),
-                    ('start_rviz', LaunchConfiguration('rviz')),
-                ],
-            ),
-        ],
-    )
 
     return LaunchDescription([
         device0_arg,
@@ -298,7 +328,8 @@ def generate_launch_description():
         web_ros_api_launch,
         real_hardware,
         ros2_control_launch,
-        rviz_only_when_not_gazebo,
-        gazebo_sim,
+        robot_state_publisher,
+        rviz,
+        gazebo,
         LogInfo(msg='========================================'),
     ])
