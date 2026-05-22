@@ -13,15 +13,6 @@ find_package(sensor_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
-
-# Generate Python classes for the custom service
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "srv/GetInt.srv"
-  DEPENDENCIES std_msgs
-  ADD_LINTER_TESTS
-)
-
 # Bind-mounted / persisted build dirs can leave .../ament_cmake_python/<pkg>/<pkg> as a directory
 # from an interrupted build; the next build then fails creating the symlink ("Is a directory").
 if(TARGET ament_cmake_python_symlink_${PROJECT_NAME})
@@ -93,8 +84,5 @@ if(BUILD_TESTING)
     APPEND_ENV PYTHONPATH="${CMAKE_CURRENT_SOURCE_DIR}/scripts:${CMAKE_CURRENT_SOURCE_DIR}"
   )
 endif()
-
-# Export the generated interfaces
-ament_export_dependencies(rosidl_default_runtime)
 
 ament_package()

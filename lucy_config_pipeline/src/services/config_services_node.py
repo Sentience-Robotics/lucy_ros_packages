@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lucy_msgs.srv import ActivateConfig, DeleteConfig, GetConfig, ListConfigs, SaveConfig
+from lucy_msgs.srv import ActivateConfig, DeleteConfig, GetConfig, GetInt, ListConfigs, SaveConfig
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import Int32
 
 from ..config_store import ConfigStore
 from ..error_format import format_error_lines
@@ -33,6 +34,19 @@ class ConfigServicesNode(Node):
         self.create_service(SaveConfig, "config/save", self._on_save_config)
         self.create_service(ActivateConfig, "config/activate", self._on_activate_config)
         self.create_service(DeleteConfig, "config/delete", self._on_delete_config)
+
+        self._client_count: int = 0
+        self.create_subscription(Int32, "/client_count", self._on_client_count, 10)
+        self.create_service(GetInt, "/get_client_count", self._on_get_client_count)
+
+    def _on_client_count(self, msg: Int32) -> None:
+        self._client_count = msg.data
+
+    def _on_get_client_count(
+        self, _req: GetInt.Request, res: GetInt.Response
+    ) -> GetInt.Response:
+        res.value = self._client_count
+        return res
 
     def _on_list_configs(
         self, _req: ListConfigs.Request, res: ListConfigs.Response

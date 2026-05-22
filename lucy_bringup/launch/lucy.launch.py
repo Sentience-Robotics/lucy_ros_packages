@@ -169,7 +169,7 @@ def generate_launch_description():
 
     real_arg = DeclareLaunchArgument(
         "real",
-        default_value="true",
+        default_value="false",
         description="If true: micro-ROS agents, USB webcam, RealSense",
     )
 
