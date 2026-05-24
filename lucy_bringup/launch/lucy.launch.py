@@ -230,7 +230,7 @@ def generate_launch_description():
             urdf_path,
             " base_path:=",
             base_path,
-            " use_gazebo_sim:=true",
+            " use_gazebo_sim:=", LaunchConfiguration('gazebo'),
             " controller_config:=",
             controller_config_path,
         ]
