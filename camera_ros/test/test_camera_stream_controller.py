@@ -33,14 +33,21 @@ def rclpy_init_shutdown():
     rclpy.shutdown()
 
 
+@pytest.fixture
+def controller_node(rclpy_init_shutdown):
+    """Create a CameraStreamController and destroy it before rclpy shuts down."""
+    from camera_stream_controller import CameraStreamController
+    node = CameraStreamController()
+    yield node
+    node.destroy_node()
+
+
 class TestCameraStreamController:
     """Unit tests for CameraStreamController node."""
 
-    def test_node_initialization(self, rclpy_init_shutdown):
+    def test_node_initialization(self, controller_node):
         """Test that controller node initializes correctly."""
-        from camera_stream_controller import CameraStreamController
-
-        node = CameraStreamController()
+        node = controller_node
 
         assert node.get_name() == 'camera_stream_controller'
         assert node.current_client_count == 0
@@ -48,11 +55,11 @@ class TestCameraStreamController:
         assert node.start_streaming_client is not None
         assert node.stop_streaming_client is not None
 
-    def test_client_count_callback_start(self, rclpy_init_shutdown):
+    def test_client_count_callback_start(self, controller_node):
         """Test client count callback starts streaming when clients > 0."""
         from camera_stream_controller import CameraStreamController
+        node = controller_node
         with patch.object(CameraStreamController, 'start_streaming') as mock_start:
-            node = CameraStreamController()
             node.is_streaming = False
 
             msg = Int32()
@@ -62,11 +69,11 @@ class TestCameraStreamController:
             mock_start.assert_called_once()
             assert node.current_client_count == 1
 
-    def test_client_count_callback_stop(self, rclpy_init_shutdown):
+    def test_client_count_callback_stop(self, controller_node):
         """Test client count callback stops streaming when clients == 0."""
         from camera_stream_controller import CameraStreamController
+        node = controller_node
         with patch.object(CameraStreamController, 'stop_streaming') as mock_stop:
-            node = CameraStreamController()
             node.is_streaming = True
 
             msg = Int32()
@@ -76,11 +83,9 @@ class TestCameraStreamController:
             mock_stop.assert_called_once()
             assert node.current_client_count == 0
 
-    def test_start_streaming_service_available(self, rclpy_init_shutdown):
+    def test_start_streaming_service_available(self, controller_node):
         """Test start_streaming when service is available."""
-        from camera_stream_controller import CameraStreamController
-
-        node = CameraStreamController()
+        node = controller_node
         node.start_streaming_client.wait_for_service = Mock(return_value=True)
         node.start_streaming_client.call_async = Mock(return_value=MagicMock())
 
@@ -91,11 +96,9 @@ class TestCameraStreamController:
         )
         node.start_streaming_client.call_async.assert_called_once()
 
-    def test_start_streaming_service_unavailable(self, rclpy_init_shutdown):
+    def test_start_streaming_service_unavailable(self, controller_node):
         """Test start_streaming when service is unavailable."""
-        from camera_stream_controller import CameraStreamController
-
-        node = CameraStreamController()
+        node = controller_node
         node.start_streaming_client.wait_for_service = Mock(return_value=False)
         node.get_logger = Mock()
 
@@ -106,11 +109,9 @@ class TestCameraStreamController:
         )
         node.get_logger().warn.assert_called()
 
-    def test_stop_streaming_service_available(self, rclpy_init_shutdown):
+    def test_stop_streaming_service_available(self, controller_node):
         """Test stop_streaming when service is available."""
-        from camera_stream_controller import CameraStreamController
-
-        node = CameraStreamController()
+        node = controller_node
         node.stop_streaming_client.wait_for_service = Mock(return_value=True)
         node.stop_streaming_client.call_async = Mock(return_value=MagicMock())
 
@@ -121,11 +122,9 @@ class TestCameraStreamController:
         )
         node.stop_streaming_client.call_async.assert_called_once()
 
-    def test_stop_streaming_service_unavailable(self, rclpy_init_shutdown):
+    def test_stop_streaming_service_unavailable(self, controller_node):
         """Test stop_streaming when service is unavailable."""
-        from camera_stream_controller import CameraStreamController
-
-        node = CameraStreamController()
+        node = controller_node
         node.stop_streaming_client.wait_for_service = Mock(return_value=False)
         node.get_logger = Mock()
 
