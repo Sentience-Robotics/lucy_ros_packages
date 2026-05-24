@@ -1,4 +1,4 @@
-"""Optional root lists candidate_urdf_joints / passive_urdf_joints / ignore_urdf_joints."""
+"""Optional root lists passive_urdf_joints / ignore_urdf_joints (and synonyms)."""
 
 from __future__ import annotations
 
