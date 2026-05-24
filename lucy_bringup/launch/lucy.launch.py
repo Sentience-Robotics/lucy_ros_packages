@@ -245,13 +245,13 @@ def generate_launch_description():
         parameters=[robot_description_dict, {"use_sim_time": True}],
     )
 
-    joint_state_publisher = Node(
-        package="joint_state_publisher",
-        executable="joint_state_publisher",
-        name="joint_state_publisher",
-        output="screen",
-        parameters=[{"use_sim_time": False}],
-    )
+    # joint_state_publisher = Node(
+    #     package="joint_state_publisher",
+    #     executable="joint_state_publisher",
+    #     name="joint_state_publisher",
+    #     output="screen",
+    #     parameters=[{"use_sim_time": False}],
+    # )
 
     real_hardware = OpaqueFunction(function=_real_hardware_stack)
     use_sim_time = LaunchConfiguration("gazebo")
