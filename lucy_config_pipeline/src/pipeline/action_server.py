@@ -11,6 +11,7 @@ from lucy_config_generator.generate import generate
 from lucy_msgs.action import ConfigurePipeline
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.node import Node
+from std_srvs.srv import Trigger
 
 from ..config_store import ConfigStore
 from ..error_format import format_error_lines
@@ -28,6 +29,8 @@ from .selection import board_build_plan, resolve_mapping_input, select_boards_to
 
 class PipelineActionServer(Node):
     _BUILD_TIMEOUT_SECONDS = int(os.environ.get("LUCY_PIPELINE_BUILD_TIMEOUT_SEC", "300"))
+    _RELOAD_SERVICE = "/lucy_control/restart"
+    _RELOAD_TIMEOUT_SECONDS = 15.0
 
     def __init__(self, *, paths: PipelinePaths, config_store: ConfigStore):
         super().__init__("lucy_config_pipeline")
@@ -35,6 +38,7 @@ class PipelineActionServer(Node):
         self._store = config_store
         self._busy_lock = threading.Lock()
         self._busy = False
+        self._reload_client = self.create_client(Trigger, self._RELOAD_SERVICE)
         self._action_server = ActionServer(
             self,
             ConfigurePipeline,
@@ -82,6 +86,59 @@ class PipelineActionServer(Node):
         fb.board = board
         goal_handle.publish_feedback(fb)
 
+    def _call_reload_service(self, goal_handle) -> tuple[bool, str]:
+        if not self._reload_client.wait_for_service(timeout_sec=self._RELOAD_TIMEOUT_SECONDS):
+            return False, f"service {self._RELOAD_SERVICE} not available"
+
+        self._feedback(
+            goal_handle,
+            phase="reload",
+            progress=0.0,
+            detail="restarting control stack",
+        )
+        req = Trigger.Request()
+        future = self._reload_client.call_async(req)
+        import rclpy
+
+        rclpy.spin_until_future_complete(self, future, timeout_sec=self._RELOAD_TIMEOUT_SECONDS)
+        if goal_handle.is_cancel_requested:
+            return False, "reload cancelled"
+        if not future.done():
+            return False, f"reload timed out after {self._RELOAD_TIMEOUT_SECONDS}s"
+        resp = future.result()
+        if resp is None:
+            return False, "reload service call failed"
+        if not resp.success:
+            return False, resp.message or "reload failed"
+        self._feedback(
+            goal_handle,
+            phase="reload",
+            progress=1.0,
+            detail=resp.message or "reload complete",
+        )
+        return True, resp.message or "reload complete"
+
+    def _generate_to_dir(
+        self,
+        *,
+        out_dir: Path,
+        config_yaml: str,
+        boards_filter: set[str] | None,
+        targets: set[str],
+        simulation_only: bool,
+    ) -> None:
+        (out_dir / "input.yaml").write_text(config_yaml, encoding="utf-8")
+        generate(
+            input_yaml=out_dir / "input.yaml",
+            urdf_xacro=self._paths.urdf_xacro,
+            base_path=self._paths.base_path,
+            controller_config=self._paths.controller_config,
+            output_dir=out_dir,
+            targets=targets,
+            boards_filter=boards_filter,
+            simulation_only=simulation_only,
+        )
+
     def _execute(self, goal_handle):
         result = ConfigurePipeline.Result()
         result.success = False
@@ -117,37 +174,53 @@ class PipelineActionServer(Node):
                 goal_handle.abort()
                 return result
 
+            boards = select_boards_to_process(data, list(goal.boards_to_flash))
+            boards_set = set(boards) if boards else None
+
             with tempfile.TemporaryDirectory(prefix="lucy_config_pipeline_") as tmp:
                 out_dir = Path(tmp)
-                boards = select_boards_to_process(data, list(goal.boards_to_flash))
-                self._feedback(
-                    goal_handle,
-                    phase="generate",
-                    progress=0.2,
-                    detail="rendering artifacts",
-                )
-                (out_dir / "input.yaml").write_text(config_yaml, encoding="utf-8")
-                generate(
-                    input_yaml=out_dir / "input.yaml",
-                    urdf_xacro=self._paths.urdf_xacro,
-                    base_path=self._paths.base_path,
-                    controller_config=self._paths.controller_config,
-                    output_dir=out_dir,
-                    targets={"firmware", "ros2_control", "controllers"},
-                    boards_filter=boards,
-                )
 
-                if not goal.dry_run:
+                if goal.simulation_only:
                     self._feedback(
                         goal_handle,
                         phase="generate",
-                        progress=0.7,
-                        detail="installing outputs",
+                        progress=0.3,
+                        detail="rendering simulation ros2_control",
                     )
-                    self._install_generated_outputs(out_dir, data)
+                    self._generate_to_dir(
+                        out_dir=out_dir,
+                        config_yaml=config_yaml,
+                        boards_filter=None,
+                        targets={"ros2_control", "controllers"},
+                        simulation_only=True,
+                    )
+                    if not goal.dry_run:
+                        self._feedback(
+                            goal_handle,
+                            phase="generate",
+                            progress=0.7,
+                            detail="installing ros2_control outputs",
+                        )
+                        self._install_ros2_control_outputs(out_dir)
+                else:
+                    self._feedback(
+                        goal_handle,
+                        phase="generate",
+                        progress=0.2,
+                        detail="rendering firmware",
+                    )
+                    self._generate_to_dir(
+                        out_dir=out_dir,
+                        config_yaml=config_yaml,
+                        boards_filter=boards_set,
+                        targets={"firmware"},
+                        simulation_only=False,
+                    )
+                    if not goal.dry_run:
+                        self._install_firmware_outputs(out_dir, data)
 
             build_failed_boards: list[str] = []
-            if not goal.dry_run:
+            if not goal.dry_run and not goal.simulation_only:
                 build_failed_boards = run_build_phase(
                     data=data,
                     selected_boards=boards,
@@ -171,7 +244,7 @@ class PipelineActionServer(Node):
                 goal_handle.abort()
                 return result
 
-            if not goal.dry_run and plan_set and not built_ok:
+            if not goal.dry_run and plan_set and not built_ok and not goal.simulation_only:
                 result.errors.extend(
                     format_error_lines(
                         [f"build failed for boards: {', '.join(sorted(build_failed_boards))}"]
@@ -189,7 +262,7 @@ class PipelineActionServer(Node):
                 )
 
             flash_failed: list[str] = []
-            if not goal.dry_run and not goal.build_only:
+            if not goal.dry_run and not goal.build_only and not goal.simulation_only:
                 flash_failed, flashed_ok = run_flash_phase(
                     data=data,
                     selected_boards=boards,
@@ -215,6 +288,38 @@ class PipelineActionServer(Node):
                 if flashed_ok:
                     self._store.record_flashed_preset(result.config_name)
 
+            if not goal.dry_run and not goal.simulation_only:
+                with tempfile.TemporaryDirectory(prefix="lucy_config_pipeline_rc_") as tmp:
+                    out_dir = Path(tmp)
+                    self._feedback(
+                        goal_handle,
+                        phase="generate",
+                        progress=0.5,
+                        detail="rendering ros2_control for reload",
+                    )
+                    self._generate_to_dir(
+                        out_dir=out_dir,
+                        config_yaml=config_yaml,
+                        boards_filter=boards_set,
+                        targets={"ros2_control", "controllers"},
+                        simulation_only=False,
+                    )
+                    self._feedback(
+                        goal_handle,
+                        phase="generate",
+                        progress=0.8,
+                        detail="installing ros2_control outputs",
+                    )
+                    self._install_ros2_control_outputs(out_dir)
+
+            if not goal.dry_run:
+                ok, reload_msg = self._call_reload_service(goal_handle)
+                if not ok:
+                    result.errors.extend(format_error_lines([reload_msg]))
+                    result.message = reload_msg
+                    goal_handle.abort()
+                    return result
+
             result.success = True
             if build_failed_boards:
                 result.message = "pipeline completed with partial build failure"
@@ -233,7 +338,7 @@ class PipelineActionServer(Node):
             with self._busy_lock:
                 self._busy = False
 
-    def _install_generated_outputs(self, out_dir: Path, data: dict) -> None:
+    def _install_ros2_control_outputs(self, out_dir: Path) -> None:
         xacro_dst = (
             self._paths.robot_root
             / "description"
@@ -246,6 +351,7 @@ class PipelineActionServer(Node):
         shutil.copy2(out_dir / "inmoov_ros2_control.xacro", xacro_dst)
         shutil.copy2(out_dir / "controllers.yaml", ctrl_dst)
 
+    def _install_firmware_outputs(self, out_dir: Path, data: dict) -> None:
         firmware_src_dir = str(data.get("firmware", {}).get("source_dir", "")).strip()
         if not firmware_src_dir:
             return
