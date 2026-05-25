@@ -4,6 +4,7 @@ string mapping_file           # config name or path (empty = active config)
 string[] boards_to_flash      # board names to flash (empty = all boards)
 bool dry_run                  # validate + generate only, no build/flash
 bool build_only               # validate + generate + build, no flash
+bool simulation_only          # skip build/flash; generate sim ros2_control + reload
 ---
 # Result
 bool success
@@ -13,7 +14,7 @@ string[] boards_flashed       # board names that were successfully flashed
 string[] errors               # per-phase error messages (if any)
 ---
 # Feedback
-string phase                  # "validate", "generate", "build", "flash"
+string phase                  # "validate", "generate", "build", "flash", "reload"
 string board                  # current board being processed (empty if N/A)
 float64 progress              # 0.0 to 1.0 within the current phase (float64 avoids 0.1 float32 echo noise)
 string detail                 # human-readable status message
