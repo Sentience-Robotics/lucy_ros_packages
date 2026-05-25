@@ -10,6 +10,7 @@ import threading
 from lucy_config_generator.generate import generate
 from lucy_msgs.action import ConfigurePipeline
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.node import Node
 from std_srvs.srv import Trigger
 
@@ -38,7 +39,17 @@ class PipelineActionServer(Node):
         self._store = config_store
         self._busy_lock = threading.Lock()
         self._busy = False
-        self._reload_client = self.create_client(Trigger, self._RELOAD_SERVICE)
+        # The action's _execute callback blocks while waiting for the reload
+        # service response. To avoid a single-callback-group deadlock (and the
+        # related corruption from re-entering the executor via
+        # spin_until_future_complete), give the action and the reload client
+        # independent callback groups so the response can be dispatched on a
+        # different thread while _execute is still running.
+        self._action_cb_group = MutuallyExclusiveCallbackGroup()
+        self._reload_cb_group = ReentrantCallbackGroup()
+        self._reload_client = self.create_client(
+            Trigger, self._RELOAD_SERVICE, callback_group=self._reload_cb_group
+        )
         self._action_server = ActionServer(
             self,
             ConfigurePipeline,
@@ -46,6 +57,7 @@ class PipelineActionServer(Node):
             execute_callback=self._execute,
             goal_callback=self._goal_callback,
             cancel_callback=self._cancel_callback,
+            callback_group=self._action_cb_group,
         )
 
     def destroy_node(self) -> bool:
@@ -98,12 +110,17 @@ class PipelineActionServer(Node):
         )
         req = Trigger.Request()
         future = self._reload_client.call_async(req)
-        import rclpy
 
-        rclpy.spin_until_future_complete(self, future, timeout_sec=self._RELOAD_TIMEOUT_SECONDS)
+        # Wait for the response *without* re-entering the executor. The reload
+        # client lives in its own ReentrantCallbackGroup, so the
+        # MultiThreadedExecutor can dispatch the response on a different thread
+        # while this _execute call stays parked here.
+        done_event = threading.Event()
+        future.add_done_callback(lambda _f: done_event.set())
+        completed = done_event.wait(timeout=self._RELOAD_TIMEOUT_SECONDS)
         if goal_handle.is_cancel_requested:
             return False, "reload cancelled"
-        if not future.done():
+        if not completed or not future.done():
             return False, f"reload timed out after {self._RELOAD_TIMEOUT_SECONDS}s"
         resp = future.result()
         if resp is None:

@@ -74,6 +74,10 @@ def test_simulation_only_skips_build_flash_and_calls_reload(pipeline_paths: Pipe
     resp.success = True
     resp.message = "ok"
     future.result.return_value = resp
+    # The new wait path uses future.add_done_callback + threading.Event,
+    # not rclpy.spin_until_future_complete. Make the callback fire immediately
+    # so done_event is set before .wait() is reached.
+    future.add_done_callback.side_effect = lambda cb: cb(future)
     node._reload_client.call_async = MagicMock(return_value=future)  # type: ignore[method-assign]
 
     goal_handle = MagicMock()
@@ -91,7 +95,6 @@ def test_simulation_only_skips_build_flash_and_calls_reload(pipeline_paths: Pipe
         patch("src.pipeline.action_server.generate") as gen,
         patch("src.pipeline.action_server.run_build_phase") as build,
         patch("src.pipeline.action_server.run_flash_phase") as flash,
-        patch("src.pipeline.action_server.rclpy.spin_until_future_complete"),
     ):
         cross.return_value = MagicMock(errors=[])
         gen.side_effect = lambda **kwargs: _write_ros2_outputs(kwargs["output_dir"])
