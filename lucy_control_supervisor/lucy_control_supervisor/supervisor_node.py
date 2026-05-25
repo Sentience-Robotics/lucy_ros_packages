@@ -20,6 +20,8 @@ import rclpy
 import yaml
 from lucy_control_supervisor.controllers_spawn import controllers_to_spawn
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
 
@@ -42,6 +44,7 @@ class _StackConfig:
 
 class ControlSupervisorNode(Node):
     RESTART_SERVICE = "/lucy_control/restart"
+    GAZEBO_RUNNING_TOPIC = "/lucy/gazebo_running"
     TERMINATE_TIMEOUT_S = 10.0
     SPAWN_SETTLE_S = 2.0
 
@@ -58,10 +61,26 @@ class ControlSupervisorNode(Node):
         self._children: List[_ManagedProc] = []
         self._restart_lock = False
         self._srv = self.create_service(Trigger, self.RESTART_SERVICE, self._on_restart)
+        # Latched publisher so any late subscriber (e.g. the LCP after rosbridge reconnects)
+        # immediately sees whether Gazebo is part of the current launch.
+        latched_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self._gazebo_running_pub = self.create_publisher(
+            Bool, self.GAZEBO_RUNNING_TOPIC, latched_qos
+        )
+        self._publish_gazebo_running()
         if self.get_parameter("autostart").value:
             ok, msg = self._restart_stack()
             if not ok:
                 self.get_logger().error(msg)
+
+    def _publish_gazebo_running(self) -> None:
+        msg = Bool()
+        msg.data = bool(self.get_parameter("use_gazebo_sim").value)
+        self._gazebo_running_pub.publish(msg)
 
     def destroy_node(self) -> bool:
         self._terminate_children()
