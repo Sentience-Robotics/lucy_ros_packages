@@ -73,7 +73,11 @@ def main() -> None:
     )
     action_node = PipelineActionServer(paths=paths, config_store=store)
 
-    executor = rclpy.executors.MultiThreadedExecutor(num_threads=2)
+    # 4 threads: 1 for the action's _execute (which blocks for minutes during
+    # build/flash and seconds during reload), 1 for the reload service-client
+    # response callback that unblocks _execute, and 2 for the config services
+    # node so config/get/list/save remain responsive during a pipeline run.
+    executor = rclpy.executors.MultiThreadedExecutor(num_threads=4)
     executor.add_node(services_node)
     executor.add_node(action_node)
     try:

@@ -33,6 +33,7 @@ Arguments:
 """
 
 import os
+from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -46,9 +47,28 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Command
+from launch.substitutions import (
+    Command,
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    PythonExpression,
+)
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+
+
+def _infer_robot_source_root(robot_package: str, share_dir: str) -> Path:
+    """Prefer workspace src tree (pipeline writes) over install share."""
+    cwd_candidate = Path.cwd() / "src" / robot_package
+    if cwd_candidate.is_dir():
+        return cwd_candidate
+    share = Path(share_dir)
+    for parent in share.parents:
+        if parent.name == "install":
+            src_candidate = parent.parent / "src" / robot_package
+            if src_candidate.is_dir():
+                return src_candidate
+    return share
 
 
 def _validate_lucy_launch(context):
@@ -185,9 +205,12 @@ def generate_launch_description():
         description="If true: thais_urdf gazebo sim (requires real:=false)",
     )
 
-    share = get_package_share_directory("thais_urdf")
-    default_base = os.path.join(share, "description")
-    default_urdf = os.path.join(default_base, "urdf", "inmoov.urdf.xacro")
+    robot_pkg_default = "thais_urdf"
+    share = get_package_share_directory(robot_pkg_default)
+    robot_root = _infer_robot_source_root(robot_pkg_default, share)
+    default_base = str(robot_root / "description")
+    default_urdf = str(robot_root / "description" / "urdf" / "inmoov.urdf.xacro")
+    default_controllers = str(robot_root / "config" / "controllers.yaml")
 
     urdf_path_arg = DeclareLaunchArgument(
         "urdf_path",
@@ -201,8 +224,11 @@ def generate_launch_description():
     )
     urdf_path = LaunchConfiguration("urdf_path")
     base_path = LaunchConfiguration("base_path")
-    thais_urdf_pkg = get_package_share_directory("thais_urdf")
-    controller_config_path = os.path.join(thais_urdf_pkg, "config", "controllers.yaml")
+    controllers_yaml_arg = DeclareLaunchArgument(
+        "controllers_yaml",
+        default_value=default_controllers,
+        description="controllers.yaml path (source tree; same as pipeline install target)",
+    )
 
     validate = OpaqueFunction(function=_validate_lucy_launch)
 
@@ -224,6 +250,19 @@ def generate_launch_description():
         ],
     )
 
+    controllers_yaml = LaunchConfiguration("controllers_yaml")
+
+    # use_mock_hardware := (not gazebo) and (not real) — RViz-only mock_components path.
+    use_mock_hardware = PythonExpression(
+        [
+            "'true' if ('",
+            LaunchConfiguration("gazebo"),
+            "'.lower() not in ('true','1','yes') and '",
+            LaunchConfiguration("real"),
+            "'.lower() not in ('true','1','yes')) else 'false'",
+        ]
+    )
+
     robot_description = Command(
         [
             "xacro ",
@@ -231,8 +270,9 @@ def generate_launch_description():
             " base_path:=",
             base_path,
             " use_gazebo_sim:=", LaunchConfiguration('gazebo'),
+            " use_mock_hardware:=", use_mock_hardware,
             " controller_config:=",
-            controller_config_path,
+            controllers_yaml,
         ]
     )
     robot_description_dict = {"robot_description": robot_description}
@@ -242,7 +282,8 @@ def generate_launch_description():
         executable="robot_state_publisher",
         name="robot_state_publisher",
         output="screen",
-        parameters=[robot_description_dict, {"use_sim_time": True}],
+        parameters=[robot_description_dict, {"use_sim_time": LaunchConfiguration("gazebo")}],
+        condition=IfCondition(LaunchConfiguration("gazebo")),
     )
 
     real_hardware = OpaqueFunction(function=_real_hardware_stack)
@@ -288,8 +329,7 @@ def generate_launch_description():
                 launch_arguments=[
                     ("urdf_path", LaunchConfiguration("urdf_path")),
                     ("base_path", LaunchConfiguration("base_path")),
-                    ("robot_package", LaunchConfiguration("robot_package")),
-                    ("use_sim_time", use_sim_time),
+                    ("controllers_yaml", controllers_yaml),
                 ],
             ),
         ],
@@ -315,6 +355,12 @@ def generate_launch_description():
                                 )
                             ]
                         ),
+                        launch_arguments=[
+                            ("urdf_path", LaunchConfiguration("urdf_path")),
+                            ("base_path", LaunchConfiguration("base_path")),
+                            ("controllers_yaml", controllers_yaml),
+                            ("use_mock_hardware", use_mock_hardware),
+                        ],
                     ),
                 ],
             ),
@@ -335,6 +381,7 @@ def generate_launch_description():
             gazebo_arg,
             urdf_path_arg,
             base_path_arg,
+            controllers_yaml_arg,
             validate,
             LogInfo(msg="========================================"),
             LogInfo(msg="Starting lucy_bringup lucy.launch.py"),
