@@ -18,6 +18,7 @@ def generate_launch_description():
             DeclareLaunchArgument("base_path", default_value=""),
             DeclareLaunchArgument("controllers_yaml", default_value=""),
             DeclareLaunchArgument("use_gazebo_sim", default_value="false"),
+            DeclareLaunchArgument("use_mock_hardware", default_value="false"),
             DeclareLaunchArgument("gazebo_only", default_value="false"),
             DeclareLaunchArgument("autostart", default_value="true"),
             Node(
@@ -31,6 +32,7 @@ def generate_launch_description():
                         "base_path": LaunchConfiguration("base_path"),
                         "controllers_yaml": LaunchConfiguration("controllers_yaml"),
                         "use_gazebo_sim": LaunchConfiguration("use_gazebo_sim"),
+                        "use_mock_hardware": LaunchConfiguration("use_mock_hardware"),
                         "gazebo_only": LaunchConfiguration("gazebo_only"),
                         "autostart": LaunchConfiguration("autostart"),
                     }

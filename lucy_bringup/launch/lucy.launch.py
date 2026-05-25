@@ -47,7 +47,7 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Command
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Command, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -247,6 +247,17 @@ def generate_launch_description():
 
     controllers_yaml = LaunchConfiguration("controllers_yaml")
 
+    # use_mock_hardware := (not gazebo) and (not real) — RViz-only mock_components path.
+    use_mock_hardware = PythonExpression(
+        [
+            "'true' if ('",
+            LaunchConfiguration("gazebo"),
+            "'.lower() not in ('true','1','yes') and '",
+            LaunchConfiguration("real"),
+            "'.lower() not in ('true','1','yes')) else 'false'",
+        ]
+    )
+
     robot_description = Command(
         [
             "xacro ",
@@ -254,6 +265,7 @@ def generate_launch_description():
             " base_path:=",
             base_path,
             " use_gazebo_sim:=", LaunchConfiguration('gazebo'),
+            " use_mock_hardware:=", use_mock_hardware,
             " controller_config:=",
             controllers_yaml,
         ]
@@ -342,6 +354,7 @@ def generate_launch_description():
                             ("urdf_path", LaunchConfiguration("urdf_path")),
                             ("base_path", LaunchConfiguration("base_path")),
                             ("controllers_yaml", controllers_yaml),
+                            ("use_mock_hardware", use_mock_hardware),
                         ],
                     ),
                 ],

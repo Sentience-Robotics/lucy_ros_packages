@@ -36,6 +36,7 @@ class _StackConfig:
     base_path: Path
     controllers_yaml: Path
     use_gazebo_sim: bool
+    use_mock_hardware: bool
     gazebo_only: bool
 
 
@@ -50,6 +51,7 @@ class ControlSupervisorNode(Node):
         self.declare_parameter("base_path", "")
         self.declare_parameter("controllers_yaml", "")
         self.declare_parameter("use_gazebo_sim", False)
+        self.declare_parameter("use_mock_hardware", False)
         self.declare_parameter("gazebo_only", False)
         self.declare_parameter("autostart", True)
 
@@ -71,6 +73,7 @@ class ControlSupervisorNode(Node):
             base_path=Path(self.get_parameter("base_path").value).resolve(),
             controllers_yaml=Path(self.get_parameter("controllers_yaml").value).resolve(),
             use_gazebo_sim=bool(self.get_parameter("use_gazebo_sim").value),
+            use_mock_hardware=bool(self.get_parameter("use_mock_hardware").value),
             gazebo_only=bool(self.get_parameter("gazebo_only").value),
         )
 
@@ -80,6 +83,7 @@ class ControlSupervisorNode(Node):
             f"base_path:={cfg.base_path}",
             f"controller_config:={cfg.controllers_yaml}",
             f"use_gazebo_sim:={'true' if cfg.use_gazebo_sim else 'false'}",
+            f"use_mock_hardware:={'true' if cfg.use_mock_hardware else 'false'}",
         ]
         if shutil.which("ros2"):
             return ["ros2", "run", "xacro", "xacro", *tail]
