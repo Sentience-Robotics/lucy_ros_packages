@@ -196,6 +196,40 @@ def render_ros2_control_xacro(
     return tpl.render(blocks=_ros2_control_blocks(data, board_ids))
 
 
+def _all_actuators_sorted(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every actuator row (enabled or not), stable sort by board then virtual_pin."""
+    boards = _board_ids_in_yaml_order(data)
+    out: list[dict[str, Any]] = []
+    for bid in boards:
+        out.extend(_actuators_for_board(data, bid, enabled_only=False))
+    return out
+
+
+def render_ros2_control_xacro_sim(
+    data: dict[str, Any],
+    env: jinja2.Environment | None = None,
+) -> str:
+    env = env or _jinja_env()
+    tpl = env.get_template("ros2_control_sim.xacro.j2")
+    return tpl.render(joints=_all_actuators_sorted(data))
+
+
+def render_controllers_yaml_sim(
+    data: dict[str, Any],
+    extra_joints: list[str],
+    env: jinja2.Environment | None = None,
+) -> str:
+    env = env or _jinja_env()
+    tpl = env.get_template("controllers_sim.yaml.j2")
+    update_rate = int(data["controller_manager"]["update_rate"])
+    actuator_joints = [a["urdf_joint"] for a in _all_actuators_sorted(data)]
+    return tpl.render(
+        update_rate=update_rate,
+        extra_joints=extra_joints,
+        actuator_joints=actuator_joints,
+    )
+
+
 def render_controllers_yaml(
     data: dict[str, Any],
     board_ids: list[str],
@@ -243,12 +277,15 @@ def generate(
     output_dir: Path,
     targets: set[str],
     boards_filter: set[str] | None,
+    simulation_only: bool = False,
 ) -> None:
     """Validate YAML and write selected artifacts into output_dir."""
     data = load_hardware_yaml(input_yaml)
     validate_hardware_yaml(data)
 
-    board_ids = _resolve_board_ids(data, boards_filter)
+    board_ids = _board_ids_in_yaml_order(data)
+    if not simulation_only:
+        board_ids = _resolve_board_ids(data, boards_filter)
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -258,22 +295,29 @@ def generate(
 
     env = _jinja_env()
 
-    if targets & {"firmware", "all"}:
-        for bid in board_ids:
+    if targets & {"firmware", "all"} and not simulation_only:
+        fw_boards = _resolve_board_ids(data, boards_filter)
+        for bid in fw_boards:
             text = render_firmware_c(data, bid, env)
             out = output_dir / f"config_{bid}.c"
             out.write_text(text, encoding="utf-8")
 
     if targets & {"ros2_control", "all"}:
         xacro_out = output_dir / "inmoov_ros2_control.xacro"
-        xacro_out.write_text(render_ros2_control_xacro(data, board_ids, env), encoding="utf-8")
+        if simulation_only:
+            xacro_out.write_text(render_ros2_control_xacro_sim(data, env), encoding="utf-8")
+        else:
+            xacro_out.write_text(render_ros2_control_xacro(data, board_ids, env), encoding="utf-8")
 
     if targets & {"controllers", "all"}:
         yaml_out = output_dir / "controllers.yaml"
-        yaml_out.write_text(
-            render_controllers_yaml(data, board_ids, extra, env),
-            encoding="utf-8",
-        )
+        if simulation_only:
+            yaml_out.write_text(render_controllers_yaml_sim(data, extra, env), encoding="utf-8")
+        else:
+            yaml_out.write_text(
+                render_controllers_yaml(data, board_ids, extra, env),
+                encoding="utf-8",
+            )
 
 
 def generate_from_xacro_string_for_tests(
@@ -281,20 +325,29 @@ def generate_from_xacro_string_for_tests(
     urdf_xml: str,
     targets: set[str],
     boards_filter: set[str] | None = None,
+    simulation_only: bool = False,
 ) -> dict[str, str]:
     """In-process generation for unit tests (no xacro binary). Returns name->content."""
     validate_hardware_yaml(data)
-    board_ids = _resolve_board_ids(data, boards_filter)
+    board_ids = _board_ids_in_yaml_order(data)
+    if not simulation_only:
+        board_ids = _resolve_board_ids(data, boards_filter)
     root = ET.fromstring(urdf_xml)
     urdf_joints = {j.attrib["name"] for j in root.findall("joint") if "name" in j.attrib}
     extra = _extra_joints(data, urdf_joints)
     env = _jinja_env()
     out: dict[str, str] = {}
-    if targets & {"firmware", "all"}:
+    if targets & {"firmware", "all"} and not simulation_only:
         for bid in board_ids:
             out[f"config_{bid}.c"] = render_firmware_c(data, bid, env)
     if targets & {"ros2_control", "all"}:
-        out["inmoov_ros2_control.xacro"] = render_ros2_control_xacro(data, board_ids, env)
+        if simulation_only:
+            out["inmoov_ros2_control.xacro"] = render_ros2_control_xacro_sim(data, env)
+        else:
+            out["inmoov_ros2_control.xacro"] = render_ros2_control_xacro(data, board_ids, env)
     if targets & {"controllers", "all"}:
-        out["controllers.yaml"] = render_controllers_yaml(data, board_ids, extra, env)
+        if simulation_only:
+            out["controllers.yaml"] = render_controllers_yaml_sim(data, extra, env)
+        else:
+            out["controllers.yaml"] = render_controllers_yaml(data, board_ids, extra, env)
     return out
