@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import rclpy
+import yaml
 from lucy_control_supervisor.controllers_spawn import controllers_to_spawn
 from rclpy.node import Node
 from std_srvs.srv import Trigger
@@ -113,21 +114,27 @@ class ControlSupervisorNode(Node):
         self._children.clear()
 
     def _start_rsp(self, cfg: _StackConfig, urdf_xml: str) -> None:
+        payload = {
+            "robot_state_publisher": {
+                "ros__parameters": {
+                    "robot_description": urdf_xml,
+                    "use_sim_time": bool(cfg.use_gazebo_sim),
+                }
+            }
+        }
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".urdf", delete=False, encoding="utf-8"
+            mode="w", suffix=".yaml", delete=False, encoding="utf-8"
         ) as f:
-            f.write(urdf_xml)
-            urdf_file = f.name
+            yaml.safe_dump(payload, f, sort_keys=False)
+            params_file = f.name
         cmd = [
             "ros2",
             "run",
             "robot_state_publisher",
             "robot_state_publisher",
             "--ros-args",
-            "-p",
-            f"robot_description_file:={urdf_file}",
-            "-p",
-            f"use_sim_time:={'true' if cfg.use_gazebo_sim else 'false'}",
+            "--params-file",
+            params_file,
         ]
         popen = subprocess.Popen(
             cmd,
