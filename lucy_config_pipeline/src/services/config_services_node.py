@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lucy_msgs.srv import ActivateConfig, DeleteConfig, GetConfig, GetInt, ListConfigs, SaveConfig
+from lucy_msgs.srv import (
+    ActivateConfig,
+    DeleteConfig,
+    GetConfig,
+    GetInt,
+    GetMesh,
+    ListConfigs,
+    SaveConfig,
+)
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Int32
@@ -34,6 +42,7 @@ class ConfigServicesNode(Node):
         self.create_service(SaveConfig, "config/save", self._on_save_config)
         self.create_service(ActivateConfig, "config/activate", self._on_activate_config)
         self.create_service(DeleteConfig, "config/delete", self._on_delete_config)
+        self.create_service(GetMesh, "mesh/get", self._on_get_mesh)
 
         self._client_count: int = 0
         self.create_subscription(Int32, "/client_count", self._on_client_count, 10)
@@ -150,6 +159,39 @@ class ConfigServicesNode(Node):
             res.success = False
             res.message = str(e)
         return res
+
+    def _on_get_mesh(self, req: GetMesh.Request, res: GetMesh.Response) -> GetMesh.Response:
+        # Serves the mesh files referenced by the URDF (file:// / package:// /
+        # absolute) so the web viewer can fetch them over ROS instead of the
+        # filesystem. Reads are confined to the robot's description tree.
+        try:
+            candidate = self._mesh_path_from_ref(req.path)
+            base = self._base_path.resolve()
+            if base != candidate and base not in candidate.parents:
+                res.success = False
+                res.message = f"path outside robot description: {candidate}"
+                return res
+            if not candidate.is_file():
+                res.success = False
+                res.message = f"mesh not found: {candidate}"
+                return res
+            res.data = candidate.read_text()
+            res.success = True
+            res.message = "ok"
+        except Exception as e:
+            res.success = False
+            res.message = str(e)
+        return res
+
+    def _mesh_path_from_ref(self, ref: str) -> Path:
+        """Resolve a URDF mesh reference to an absolute filesystem path."""
+        if ref.startswith("file://"):
+            return Path(ref[len("file://"):]).resolve()
+        if ref.startswith("package://"):
+            # package://<pkg>/<rel> — robot packages are rooted at base_path's parent.
+            _, _, rel = ref[len("package://"):].partition("/")
+            return (self._base_path.parent / rel).resolve()
+        return Path(ref).resolve()
 
 
 def main() -> None:  # pragma: no cover

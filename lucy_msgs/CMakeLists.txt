@@ -12,6 +12,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetInt.srv"
   "srv/ListConfigs.srv"
   "srv/GetConfig.srv"
+  "srv/GetMesh.srv"
   "srv/SaveConfig.srv"
   "srv/ActivateConfig.srv"
   "srv/DeleteConfig.srv"

@@ -175,7 +175,7 @@ def generate_launch_description():
     robot_package_arg = DeclareLaunchArgument(
         "robot_package",
         default_value="thais_urdf",
-        description="Robot package: control.launch.py + config paths + RViz config",
+        description="Robot package: control.launch.py + config paths + RViz config + URDF",
     )
 
     config_dir_arg = DeclareLaunchArgument(
