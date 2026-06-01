@@ -2,7 +2,7 @@ from src.validation import ValidationReport, parse_yaml_text
 
 
 def test_parse_yaml_mapping():
-    data = parse_yaml_text("version: 1\nrobot_name: thais\n")
+    data = parse_yaml_text("version: 1\nrobot_name: inmoov\n")
     assert data["version"] == 1
 
 
