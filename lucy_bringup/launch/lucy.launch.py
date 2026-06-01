@@ -29,6 +29,12 @@ Arguments:
 - ``rviz`` (default ``false``): RViz2 (real/sim time set per mode). With ``gazebo:=true``,
   forwarded as ``start_rviz`` to ``thais_urdf/gazebo.launch.py`` (no second RViz).
 - ``gazebo`` (default ``false``): GZ Sim stack from ``thais_urdf``; requires ``real:=false``.
+- ``headless`` (default ``false``): only meaningful with ``gazebo:=true``. Runs gz-sim
+  server-only with EGL rendering (``-s -r --headless-rendering``) so camera sensors
+  keep producing frames without an X server. Forwarded to ``thais_urdf/gazebo.launch.py``.
+
+URDF uniform length scale is set in ``thais_urdf/description/robot_description/urdf/properties.xacro``
+(``model_scale`` xacro property) — not a launch argument.
 
 """
 
@@ -54,6 +60,7 @@ from launch.substitutions import (
     PythonExpression,
 )
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -205,6 +212,15 @@ def generate_launch_description():
         description="If true: thais_urdf gazebo sim (requires real:=false)",
     )
 
+    headless_arg = DeclareLaunchArgument(
+        "headless",
+        default_value="false",
+        description=(
+            "Only with gazebo:=true. Server-only gz-sim with EGL rendering "
+            "(-s -r --headless-rendering); cameras still work without an X server."
+        ),
+    )
+
     robot_pkg_default = "thais_urdf"
     share = get_package_share_directory(robot_pkg_default)
     robot_root = _infer_robot_source_root(robot_pkg_default, share)
@@ -263,17 +279,23 @@ def generate_launch_description():
         ]
     )
 
-    robot_description = Command(
-        [
-            "xacro ",
-            urdf_path,
-            " base_path:=",
-            base_path,
-            " use_gazebo_sim:=", LaunchConfiguration('gazebo'),
-            " use_mock_hardware:=", use_mock_hardware,
-            " controller_config:=",
-            controllers_yaml,
-        ]
+    # Force value_type=str so ROS 2 launch (Humble) does not try to YAML-parse
+    # the xacro output. The URDF starts with `<?xml ...>`, which the YAML
+    # loader rejects with "Unable to parse the value of parameter robot_description".
+    robot_description = ParameterValue(
+        Command(
+            [
+                "xacro ",
+                urdf_path,
+                " base_path:=",
+                base_path,
+                " use_gazebo_sim:=", LaunchConfiguration('gazebo'),
+                " use_mock_hardware:=", use_mock_hardware,
+                " controller_config:=",
+                controllers_yaml,
+            ]
+        ),
+        value_type=str,
     )
     robot_description_dict = {"robot_description": robot_description}
 
@@ -330,6 +352,7 @@ def generate_launch_description():
                     ("urdf_path", LaunchConfiguration("urdf_path")),
                     ("base_path", LaunchConfiguration("base_path")),
                     ("controllers_yaml", controllers_yaml),
+                    ("headless", LaunchConfiguration("headless")),
                 ],
             ),
         ],
@@ -379,6 +402,7 @@ def generate_launch_description():
             real_arg,
             rviz_arg,
             gazebo_arg,
+            headless_arg,
             urdf_path_arg,
             base_path_arg,
             controllers_yaml_arg,
