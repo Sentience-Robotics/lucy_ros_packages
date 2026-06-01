@@ -33,7 +33,8 @@ Arguments:
   server-only with EGL rendering (``-s -r --headless-rendering``) so camera sensors
   keep producing frames without an X server. Forwarded to ``thais_urdf/gazebo.launch.py``.
 
-URDF uniform length scale is set in ``thais_urdf/description/robot_description/urdf/properties.xacro``
+URDF uniform length scale lives in
+``thais_urdf/description/robot_description/urdf/properties.xacro``
 (``model_scale`` xacro property) — not a launch argument.
 
 """
