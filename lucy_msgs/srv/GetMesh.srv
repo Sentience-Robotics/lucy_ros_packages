@@ -1,0 +1,7 @@
+# Request
+string path                   # mesh reference from the URDF (file://, package://, or absolute)
+---
+# Response
+bool success
+string message
+string data                   # mesh file contents as text (e.g. Collada/DAE XML)
