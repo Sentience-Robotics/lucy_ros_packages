@@ -40,6 +40,7 @@ class _StackConfig:
     use_gazebo_sim: bool
     use_mock_hardware: bool
     gazebo_only: bool
+    ros2_control_file: str
 
 
 class ControlSupervisorNode(Node):
@@ -57,6 +58,7 @@ class ControlSupervisorNode(Node):
         self.declare_parameter("use_mock_hardware", False)
         self.declare_parameter("gazebo_only", False)
         self.declare_parameter("autostart", True)
+        self.declare_parameter("ros2_control_file", "inmoov_ros2_control.xacro")
 
         self._children: List[_ManagedProc] = []
         self._restart_lock = False
@@ -94,6 +96,9 @@ class ControlSupervisorNode(Node):
             use_gazebo_sim=bool(self.get_parameter("use_gazebo_sim").value),
             use_mock_hardware=bool(self.get_parameter("use_mock_hardware").value),
             gazebo_only=bool(self.get_parameter("gazebo_only").value),
+            ros2_control_file=str(
+                self.get_parameter("ros2_control_file").value or "inmoov_ros2_control.xacro"
+            ).strip(),
         )
 
     def _xacro_cmd(self, cfg: _StackConfig) -> list[str]:
@@ -103,6 +108,7 @@ class ControlSupervisorNode(Node):
             f"controller_config:={cfg.controllers_yaml}",
             f"use_gazebo_sim:={'true' if cfg.use_gazebo_sim else 'false'}",
             f"use_mock_hardware:={'true' if cfg.use_mock_hardware else 'false'}",
+            f"ros2_control_file:={cfg.ros2_control_file}",
         ]
         if shutil.which("ros2"):
             return ["ros2", "run", "xacro", "xacro", *tail]

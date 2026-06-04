@@ -8,6 +8,7 @@ import tempfile
 import threading
 
 from lucy_config_generator.generate import generate
+from lucy_config_generator.schema import resolve_generated_files
 from lucy_msgs.action import ConfigurePipeline
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
@@ -197,33 +198,39 @@ class PipelineActionServer(Node):
             with tempfile.TemporaryDirectory(prefix="lucy_config_pipeline_") as tmp:
                 out_dir = Path(tmp)
 
-                if goal.simulation_only:
+                # ros2_control + controllers are always regenerated, regardless of
+                # simulation_only / build_only / dry_run
+                self._feedback(
+                    goal_handle,
+                    phase="generate",
+                    progress=0.3,
+                    detail=(
+                        "rendering simulation ros2_control"
+                        if goal.simulation_only
+                        else "rendering ros2_control"
+                    ),
+                )
+                self._generate_to_dir(
+                    out_dir=out_dir,
+                    config_yaml=config_yaml,
+                    boards_filter=None if goal.simulation_only else boards_set,
+                    targets={"ros2_control", "controllers"},
+                    simulation_only=goal.simulation_only,
+                )
+                if not goal.dry_run:
                     self._feedback(
                         goal_handle,
                         phase="generate",
-                        progress=0.3,
-                        detail="rendering simulation ros2_control",
+                        progress=0.5,
+                        detail="installing ros2_control outputs",
                     )
-                    self._generate_to_dir(
-                        out_dir=out_dir,
-                        config_yaml=config_yaml,
-                        boards_filter=None,
-                        targets={"ros2_control", "controllers"},
-                        simulation_only=True,
-                    )
-                    if not goal.dry_run:
-                        self._feedback(
-                            goal_handle,
-                            phase="generate",
-                            progress=0.7,
-                            detail="installing ros2_control outputs",
-                        )
-                        self._install_ros2_control_outputs(out_dir)
-                else:
+                    self._install_ros2_control_outputs(out_dir, data)
+
+                if not goal.simulation_only:
                     self._feedback(
                         goal_handle,
                         phase="generate",
-                        progress=0.2,
+                        progress=0.7,
                         detail="rendering firmware",
                     )
                     self._generate_to_dir(
@@ -305,30 +312,6 @@ class PipelineActionServer(Node):
                 if flashed_ok:
                     self._store.record_flashed_preset(result.config_name)
 
-            if not goal.dry_run and not goal.simulation_only:
-                with tempfile.TemporaryDirectory(prefix="lucy_config_pipeline_rc_") as tmp:
-                    out_dir = Path(tmp)
-                    self._feedback(
-                        goal_handle,
-                        phase="generate",
-                        progress=0.5,
-                        detail="rendering ros2_control for reload",
-                    )
-                    self._generate_to_dir(
-                        out_dir=out_dir,
-                        config_yaml=config_yaml,
-                        boards_filter=boards_set,
-                        targets={"ros2_control", "controllers"},
-                        simulation_only=False,
-                    )
-                    self._feedback(
-                        goal_handle,
-                        phase="generate",
-                        progress=0.8,
-                        detail="installing ros2_control outputs",
-                    )
-                    self._install_ros2_control_outputs(out_dir)
-
             if not goal.dry_run:
                 ok, reload_msg = self._call_reload_service(goal_handle)
                 if not ok:
@@ -355,18 +338,18 @@ class PipelineActionServer(Node):
             with self._busy_lock:
                 self._busy = False
 
-    def _install_ros2_control_outputs(self, out_dir: Path) -> None:
+    def _install_ros2_control_outputs(self, out_dir: Path, data: dict) -> None:
+        names = resolve_generated_files(data)
+        xacro_name = names["ros2_control_xacro"]
+        ctrl_name = names["controllers_yaml"]
         xacro_dst = (
-            self._paths.robot_root
-            / "description"
-            / "ros2_control"
-            / "inmoov_ros2_control.xacro"
+            self._paths.robot_root / "description" / "ros2_control" / xacro_name
         )
-        ctrl_dst = self._paths.robot_root / "config" / "controllers.yaml"
+        ctrl_dst = self._paths.robot_root / "config" / ctrl_name
         xacro_dst.parent.mkdir(parents=True, exist_ok=True)
         ctrl_dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(out_dir / "inmoov_ros2_control.xacro", xacro_dst)
-        shutil.copy2(out_dir / "controllers.yaml", ctrl_dst)
+        shutil.copy2(out_dir / xacro_name, xacro_dst)
+        shutil.copy2(out_dir / ctrl_name, ctrl_dst)
 
     def _install_firmware_outputs(self, out_dir: Path, data: dict) -> None:
         firmware_src_dir = str(data.get("firmware", {}).get("source_dir", "")).strip()

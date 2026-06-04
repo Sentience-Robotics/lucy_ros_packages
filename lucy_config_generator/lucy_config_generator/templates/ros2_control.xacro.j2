@@ -11,11 +11,11 @@
             <plugin>gz_ros2_control/GazeboSimSystem</plugin>
           </xacro:if>
           <xacro:unless value="$(arg use_gazebo_sim)">
+            <plugin>lucy_ros2_control/LucySystemHardware</plugin>
             <xacro:if value="$(arg use_mock_hardware)">
-              <plugin>mock_components/GenericSystem</plugin>
+              <param name="publish_actuators">false</param>
             </xacro:if>
             <xacro:unless value="$(arg use_mock_hardware)">
-              <plugin>lucy_ros2_control/LucySystemHardware</plugin>
               <param name="publisher_topic">{{ block.publisher_topic }}</param>
               <param name="node_name">{{ block.node_name }}</param>
             </xacro:unless>
@@ -31,7 +31,12 @@
           <param name="servo_min_deg">{{ j.servo_min_deg }}</param>
           <param name="servo_max_deg">{{ j.servo_max_deg }}</param>
           <param name="servo_default_deg">{{ j.servo_default_deg }}</param>
-          <command_interface name="position" />
+          <command_interface name="position">
+{% if j.limit_lower_rad is defined and j.limit_upper_rad is defined %}
+            <param name="min">{{ j.limit_lower_rad }}</param>
+            <param name="max">{{ j.limit_upper_rad }}</param>
+{% endif %}
+          </command_interface>
           <state_interface name="position" />
       </joint>
 {% endfor %}

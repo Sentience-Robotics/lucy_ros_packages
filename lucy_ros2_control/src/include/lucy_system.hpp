@@ -1,19 +1,28 @@
-// Copyright 2021 ros2_control Development Team
+// Copyright 2025 Sentience Robotics Team
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#ifndef ROS2_CONTROL_DEMO_EXAMPLE_2__DIFFBOT_SYSTEM_HPP_
-#define ROS2_CONTROL_DEMO_EXAMPLE_2__DIFFBOT_SYSTEM_HPP_
+/// @file lucy_system.hpp
+/// @brief ros2_control ``SystemInterface`` plugin for Lucy-compatible robots.
+///
+/// Maps URDF joint-space commands to servo-space output and clamps them to the
+/// ros2_control command_interface ``<param name="min/max">`` envelope (real +
+/// mock paths) via ``position_limit_clamp.hpp``. Gazebo uses stock
+/// ``gz_ros2_control`` and does not load this plugin.
+
+#ifndef LUCY_ROS2_CONTROL__LUCY_SYSTEM_HPP_
+#define LUCY_ROS2_CONTROL__LUCY_SYSTEM_HPP_
 
 #include <memory>
 #include <cstddef>
@@ -35,7 +44,9 @@
 #include "rclcpp_lifecycle/state.hpp"
 #include <sensor_msgs/msg/joint_state.hpp>
 
-namespace ros2_control_demo_example_2
+#include "joint_config.hpp"
+
+namespace lucy_ros2_control
 {
 class LucySystemHardware : public hardware_interface::SystemInterface
 {
@@ -65,17 +76,17 @@ public:
   // rclcpp::Clock::SharedPtr get_clock() const { return clock_; }
 
 private:
-  struct ActuatedJointMapping
-  {
-    std::size_t joint_index;
-    int virtual_pin;
-    double offset_deg;
-    double direction;
-    double scale;
-    double servo_min_deg;
-    double servo_max_deg;
-    double servo_default_deg;
-  };
+  /// Validate every joint's command/state interfaces (see on_init step 1).
+  hardware_interface::CallbackReturn validate_joints();
+
+  /// Read publish/topic/node params and create the actuator publisher + node.
+  hardware_interface::CallbackReturn configure_publisher();
+
+  /// Fill joint_min_rad_ / joint_max_rad_ from command_interface min/max.
+  hardware_interface::CallbackReturn init_joint_limits();
+
+  /// Build mappings_, seed default positions, sort and reject duplicate pins.
+  hardware_interface::CallbackReturn init_actuator_mappings();
 
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_publisher_;
   rclcpp::Node::SharedPtr node_;
@@ -89,9 +100,15 @@ private:
   std::vector<double> hw_positions_;
   // std::vector<double> hw_velocities_; // We have no velocity for our servos
 
+  /** Per-joint URDF limits from command_interface min/max (rad); ±inf when unset. */
+  std::vector<double> joint_min_rad_;
+  std::vector<double> joint_max_rad_;
+
+  bool publish_actuators_{true};
+
   std::vector<ActuatedJointMapping> mappings_;
 };
 
-}  // namespace ros2_control_demo_example_2
+}  // namespace lucy_ros2_control
 
-#endif  // ROS2_CONTROL_DEMO_EXAMPLE_2__DIFFBOT_SYSTEM_HPP_
+#endif  // LUCY_ROS2_CONTROL__LUCY_SYSTEM_HPP_

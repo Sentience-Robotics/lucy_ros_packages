@@ -20,6 +20,7 @@ from lucy_config_generator.schema import (
     BOARD_CLASS_INTERNAL_ONLY,
     derive_ros2_hardware_name,
     derive_ros2_node_name,
+    resolve_generated_files,
     validate_hardware_yaml,
 )
 
@@ -63,12 +64,36 @@ def _xacro_argv(urdf_xacro: Path, base_path: Path, controller_config: Path) -> l
     )
 
 
-def urdf_joint_names(
+def _parse_urdf_joints_xml(
+    urdf_xml: str,
+) -> tuple[set[str], dict[str, tuple[float, float]]]:
+    """Joint names and URDF ``<limit lower upper>`` (rad) for revolute/prismatic joints."""
+    root = ET.fromstring(urdf_xml)
+    names: set[str] = set()
+    limits: dict[str, tuple[float, float]] = {}
+    for j in root.findall("joint"):
+        name = j.attrib.get("name")
+        if not name:
+            continue
+        names.add(name)
+        if j.attrib.get("type") not in ("revolute", "prismatic"):
+            continue
+        limit_el = j.find("limit")
+        if limit_el is None:
+            continue
+        lo = limit_el.attrib.get("lower")
+        hi = limit_el.attrib.get("upper")
+        if lo is None or hi is None:
+            continue
+        limits[name] = (float(lo), float(hi))
+    return names, limits
+
+
+def _expand_urdf_xacro(
     urdf_xacro: Path,
     base_path: Path,
     controller_config: Path,
-) -> set[str]:
-    """Joint names from processed URDF (same args as thais_urdf xacro smoke)."""
+) -> str:
     if not urdf_xacro.is_file():
         raise FileNotFoundError(urdf_xacro)
     if not base_path.is_dir():
@@ -79,13 +104,31 @@ def urdf_joint_names(
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
     if r.returncode != 0:
         raise RuntimeError(f"xacro failed: {r.stderr}")
-    root = ET.fromstring(r.stdout)
-    names: set[str] = set()
-    for j in root.findall("joint"):
-        n = j.attrib.get("name")
-        if n:
-            names.add(n)
+    return r.stdout
+
+
+def urdf_joint_names(
+    urdf_xacro: Path,
+    base_path: Path,
+    controller_config: Path,
+) -> set[str]:
+    """Joint names from processed URDF (same args as thais_urdf xacro smoke)."""
+    names, _ = _parse_urdf_joints_xml(
+        _expand_urdf_xacro(urdf_xacro, base_path, controller_config)
+    )
     return names
+
+
+def urdf_joint_limits(
+    urdf_xacro: Path,
+    base_path: Path,
+    controller_config: Path,
+) -> dict[str, tuple[float, float]]:
+    """URDF position limits (rad) keyed by joint name."""
+    _, limits = _parse_urdf_joints_xml(
+        _expand_urdf_xacro(urdf_xacro, base_path, controller_config)
+    )
+    return limits
 
 
 def _board_ids_in_yaml_order(data: dict[str, Any]) -> list[str]:
@@ -128,13 +171,31 @@ def _sensors_for_board_firmware(data: dict[str, Any], board_id: str) -> list[dic
     return out
 
 
+def _actuator_joint_for_ros2(
+    actuator: dict[str, Any],
+    urdf_limits: dict[str, tuple[float, float]],
+) -> dict[str, Any]:
+    """Copy actuator row and attach URDF command_interface min/max when present."""
+    row = dict(actuator)
+    pair = urdf_limits.get(actuator["urdf_joint"])
+    if pair is not None:
+        row["limit_lower_rad"] = pair[0]
+        row["limit_upper_rad"] = pair[1]
+    return row
+
+
 def _ros2_control_blocks(
-    data: dict[str, Any], board_ids: list[str]
+    data: dict[str, Any],
+    board_ids: list[str],
+    urdf_limits: dict[str, tuple[float, float]],
 ) -> list[dict[str, Any]]:
     blocks: list[dict[str, Any]] = []
     for bid in board_ids:
         bdef = data["boards"][bid]
-        joints = _actuators_for_board(data, bid, enabled_only=False)
+        joints = [
+            _actuator_joint_for_ros2(a, urdf_limits)
+            for a in _actuators_for_board(data, bid, enabled_only=False)
+        ]
         blocks.append(
             {
                 "board_id": bid,
@@ -189,11 +250,12 @@ def render_firmware_c(
 def render_ros2_control_xacro(
     data: dict[str, Any],
     board_ids: list[str],
+    urdf_limits: dict[str, tuple[float, float]],
     env: jinja2.Environment | None = None,
 ) -> str:
     env = env or _jinja_env()
     tpl = env.get_template("ros2_control.xacro.j2")
-    return tpl.render(blocks=_ros2_control_blocks(data, board_ids))
+    return tpl.render(blocks=_ros2_control_blocks(data, board_ids, urdf_limits))
 
 
 def render_controllers_yaml(
@@ -255,10 +317,14 @@ def generate(
         ros2_control_boards = _resolve_board_ids(data, boards_filter)
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    names = resolve_generated_files(data)
+
+    urdf_xml = _expand_urdf_xacro(urdf_xacro, base_path, controller_config)
+    urdf_names, urdf_limits = _parse_urdf_joints_xml(urdf_xml)
 
     extra: list[str] = []
     if targets & {"controllers", "all"}:
-        extra = _extra_joints(data, urdf_joint_names(urdf_xacro, base_path, controller_config))
+        extra = _extra_joints(data, urdf_names)
 
     env = _jinja_env()
 
@@ -270,14 +336,14 @@ def generate(
             out.write_text(text, encoding="utf-8")
 
     if targets & {"ros2_control", "all"}:
-        xacro_out = output_dir / "inmoov_ros2_control.xacro"
+        xacro_out = output_dir / names["ros2_control_xacro"]
         xacro_out.write_text(
-            render_ros2_control_xacro(data, ros2_control_boards, env),
+            render_ros2_control_xacro(data, ros2_control_boards, urdf_limits, env),
             encoding="utf-8",
         )
 
     if targets & {"controllers", "all"}:
-        yaml_out = output_dir / "controllers.yaml"
+        yaml_out = output_dir / names["controllers_yaml"]
         yaml_out.write_text(
             render_controllers_yaml(data, ros2_control_boards, extra, env),
             encoding="utf-8",
@@ -299,16 +365,18 @@ def generate_from_xacro_string_for_tests(
     else:
         board_ids = _resolve_board_ids(data, boards_filter)
         firmware_boards = board_ids
-    root = ET.fromstring(urdf_xml)
-    urdf_joints = {j.attrib["name"] for j in root.findall("joint") if "name" in j.attrib}
-    extra = _extra_joints(data, urdf_joints)
+    urdf_names, urdf_limits = _parse_urdf_joints_xml(urdf_xml)
+    extra = _extra_joints(data, urdf_names)
+    names = resolve_generated_files(data)
     env = _jinja_env()
     out: dict[str, str] = {}
     if targets & {"firmware", "all"} and not simulation_only:
         for bid in firmware_boards:
             out[f"config_{bid}.c"] = render_firmware_c(data, bid, env)
     if targets & {"ros2_control", "all"}:
-        out["inmoov_ros2_control.xacro"] = render_ros2_control_xacro(data, board_ids, env)
+        out[names["ros2_control_xacro"]] = render_ros2_control_xacro(
+            data, board_ids, urdf_limits, env
+        )
     if targets & {"controllers", "all"}:
-        out["controllers.yaml"] = render_controllers_yaml(data, board_ids, extra, env)
+        out[names["controllers_yaml"]] = render_controllers_yaml(data, board_ids, extra, env)
     return out

@@ -63,18 +63,35 @@ flowchart TB
 
 ## 4. Hardware plugin behavior (`LucySystemHardware`)
 
-Configured per arm in **`thais_urdf`** → `inmoov/ros2_control/inmoov_ros2_control.xacro` (when `use_gazebo_sim:=false`):
+`LucySystemHardware` is the only ros2_control plugin Lucy ships. The same plugin is selected for **real** and **mock/RViz** hardware; only Gazebo uses a different plugin (`gz_ros2_control/GazeboSimSystem`).
 
-- **Left:** `publisher_topic` = `actuators/left_arm`, `node_name` = `lucy_hardware_interface_left_arm`.
-- **Right:** `publisher_topic` = `actuators/right_arm`, `node_name` = `lucy_hardware_interface_right_arm`.
+| `use_gazebo_sim` | `use_mock_hardware` | Plugin selected | `publish_actuators` |
+|------------------|---------------------|-----------------|---------------------|
+| `false` | `false` | `lucy_ros2_control/LucySystemHardware` | `true` (default) |
+| `false` | `true`  | `lucy_ros2_control/LucySystemHardware` | `false` |
+| `true`  | *any*   | `gz_ros2_control/GazeboSimSystem` | n/a |
 
-Implementation notes (see `lucy_ros2_control/hardware/lucy_system.cpp`):
+Per-arm parameters (xacro, real hardware path):
 
-- **`read()`**: no encoders; **`hw_positions_`** is set from **`hw_commands_`** (state follows last command).
-- **`write()`**: builds **`sensor_msgs/msg/JointState`** with **header** and **position** array only. Firmware expects **nine** positions per arm in bus order; the URDF lists ten arm joints per side, so **`left_shoulder_y_link_joint`** / **`right_shoulder_y_link_joint`** are **omitted** from the published array (wiring/bus mapping).
-- **QoS**: publisher is **RELIABLE**; **BEST_EFFORT** would not match typical micro-ROS subscriptions.
+- **Left:** `publisher_topic = actuators/left_arm`, `node_name = lucy_hardware_interface_left_arm`.
+- **Right:** `publisher_topic = actuators/right_arm`, `node_name = lucy_hardware_interface_right_arm`.
 
-Simulation (`use_gazebo_sim:=true`) uses **`gz_ros2_control/GazeboSimSystem`** instead—no `/actuators/*` traffic to Picos.
+Implementation (`lucy_ros2_control/src/lucy_system.cpp`):
+
+- **`on_init()`** is a thin orchestrator over four steps, each a small member function: `validate_joints()` (interface checks), `configure_publisher()` (params + node/publisher), `init_joint_limits()` and `init_actuator_mappings()`. The side-effect-free parsing/validation/mapping core lives in `src/joint_config.{hpp,cpp}` (no live ROS node) and is unit-tested directly. `on_init` parses, per joint:
+  - The actuator mapping (`offset_deg`, `direction`, `scale`, `servo_min/max/default_deg`).
+  - URDF position envelope from `<command_interface name="position"><param name="min/max"/></command_interface>` (radians) into `joint_min_rad_` / `joint_max_rad_`.
+  - The `publish_actuators` boolean (defaults to `true`).
+- **`read()`**: no encoders → `hw_positions_` mirrors the last clamped command.
+- **`write()`** (in order):
+  1. **URDF clamp** — every `hw_commands_[i]` is clamped to `[joint_min_rad_[i], joint_max_rad_[i]]`. `/joint_states` and the actuator publisher both reflect the clamped value, so out-of-range commands from MoveIt / LCP / CLI plateau at the URDF wall.
+  2. **Mock short-circuit** — if `publish_actuators_` is `false`, return after the clamp (no micro-ROS traffic). RViz/mock therefore enforces URDF limits the same way as real hardware, without spamming `/actuators/*`.
+  3. **Actuator mapping** — `joint_rad → joint_deg → servo_deg` via `(joint_deg / (direction*scale)) + offset_deg`, then clamped to `[servo_min_deg, servo_max_deg]` (`actuator_command_to_servo_rad()` in `joint_config`).
+  4. **Publish** — `sensor_msgs/msg/JointState` (header + position only) at **RELIABLE** QoS to match micro-ROS defaults. Firmware expects **nine** positions per arm in bus order, so `left_shoulder_y_link_joint` / `right_shoulder_y_link_joint` are omitted from the arm publishers (those are torso joints).
+
+The same clamp helper (`src/include/position_limit_clamp.hpp`) is reused for the actuator-frame clamp.
+
+> **Gazebo caveat.** `gz_ros2_control` (upstream `humble`) does **not** apply the `<command_interface><param name="min/max">` values inside `write()`. Gazebo may still respect joint limits coming from the spawned model/physics, but ros2_control-level URDF clamping in this repo is enforced by `LucySystemHardware` only. If consistent clamping in Gazebo becomes a hard requirement, the path is to either patch `gz_ros2_control` locally or wire `joint_limits_interface::PositionJointSaturationHandle` on the controllers.
 
 ---
 
@@ -110,6 +127,8 @@ If managers or spawners failed, commands are published but **nothing updates com
 2. **Sim URDF on hardware** — `LucySystemHardware` is absent when **`GazeboSimSystem`** is in the URDF; real Picos need `use_gazebo_sim:=false` in xacro.
 3. **QoS** — keep actuator publishers **RELIABLE** for micro-ROS defaults.
 4. **Cycle packaging** — `thais_urdf` does not `exec_depend` on `lucy_ros2_control`; install both packages in the same workspace/underlay so default `urdf_path` / controller YAML resolve.
+5. **URDF limits invisible at runtime** — `lucy_config_generator` must run before bringup so `<param name="min/max"/>` actually lands in the installed `inmoov_ros2_control.xacro`. Use the **GENERATE** step in the LCP activate workflow (or `ros2 service call /lucy_control/configure_pipeline …`) — see [§9](#9-config-pipeline-and-the-generate-step).
+6. **Gazebo over-travel** — see the caveat at the end of §4.
 
 ---
 
@@ -117,9 +136,29 @@ If managers or spawners failed, commands are published but **nothing updates com
 
 | Path | Purpose |
 |------|---------|
-| `lucy_ros2_control/hardware/*` | `LucySystemHardware` |
+| `lucy_ros2_control/src/lucy_system.cpp` | `LucySystemHardware` plugin (lifecycle, read/write) |
+| `lucy_ros2_control/src/joint_config.{hpp,cpp}` | Pure on_init helpers: parsing, validation, actuator mapping, joint↔servo math |
+| `lucy_ros2_control/src/include/position_limit_clamp.hpp` | Shared URDF / actuator-frame clamp |
+| `lucy_ros2_control/test/test_position_limit_clamp.cpp` | gtest pinning the clamp algorithm |
+| `lucy_ros2_control/test/test_joint_config.cpp` | gtest for the joint_config helpers |
 | `lucy_ros2_control/config/lucy_controllers.yaml` | Controllers + `extra_joints` for TF |
 | `lucy_ros2_control/launch/control.launch.py` | Bringup snippet |
-| `thais_urdf/inmoov/ros2_control/inmoov_ros2_control.xacro` | Plugins + joint list per arm |
+| `lucy_config_generator/lucy_config_generator/templates/ros2_control.xacro.j2` | Source of `<param name="min/max"/>` and plugin selection |
+| `lucy_config_generator/test/test_position_limits_unified.py` | URDF limits propagate to all `<command_interface>` blocks |
+| `thais_urdf/description/ros2_control/inmoov_ros2_control.xacro` | Generated artefact: plugins + joint list per board |
 
 Maintainers: align changes with **`../../thais_urdf/docs/DEVELOPER.md`** and control-panel joint config when joint order or names change.
+
+---
+
+## 9. Config pipeline and the GENERATE step
+
+`lucy_config_pipeline` exposes the `ConfigurePipeline` action. The internal phases are now:
+
+1. **VALIDATE** — schema-check `config/hardware/active.yaml`.
+2. **GENERATE** — `lucy_config_generator` regenerates `inmoov_ros2_control.xacro` and `controllers.yaml` from the YAML and installs them into `thais_urdf/description/...` and `thais_urdf/config/...`. **Always runs**, including in `simulation_only` mode where BUILD/FLASH are skipped.
+3. **BUILD** *(optional, skipped in `simulation_only`)* — compiles the RP2040 firmware C generated alongside the xacro.
+4. **FLASH** *(optional, skipped in `simulation_only`)* — `sudo picotool` of the new firmware images.
+5. **RELOAD** — calls `/lucy_control/restart` to re-read URDF + controller YAML; for Gazebo topology changes a relaunch is still required.
+
+Decoupling GENERATE from BUILD means the LCP "SIMULATION ONLY" toggle can update URDF limits, joint names, and controller wiring without touching firmware. Real-hardware runs include all five phases.
