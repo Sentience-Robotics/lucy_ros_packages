@@ -58,6 +58,12 @@ REQUIRED_BOARD = (
     "topic_sensors",
     "controller",
 )
+REQUIRED_CAMERA = (
+    "name",
+    "topic",
+    "message_type",
+    "external",
+)
 
 # Generated-artifact filenames. Directories are fixed by repo convention
 # (``description/ros2_control/`` and ``config/``); only the basename is

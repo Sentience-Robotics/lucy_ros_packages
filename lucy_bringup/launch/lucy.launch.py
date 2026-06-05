@@ -59,6 +59,7 @@ from launch.substitutions import (
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def _infer_robot_source_root(robot_package: str, share_dir: str) -> Path:
@@ -375,7 +376,7 @@ def generate_launch_description():
         ),
         value_type=str,
     )
-    robot_description_dict = {"robot_description": robot_description}
+    robot_description_dict = {"robot_description": ParameterValue(robot_description, value_type=str)}
 
     robot_state_publisher = Node(
         package="robot_state_publisher",
