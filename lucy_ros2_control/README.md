@@ -6,7 +6,7 @@ ROS 2 Control hardware plugin for Lucy-compatible robots.
 
 ## Contents
 
-- **Hardware interface plugin** — `LucySystemHardware` in `hardware/lucy_system.cpp`.
+- **Hardware interface plugin** — `LucySystemHardware` in `src/lucy_system.cpp`.
 - **Plugin description** — `lucy_ros2_control.xml`.
 
 ## Building

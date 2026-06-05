@@ -4,7 +4,19 @@ Service/action layer for the hardware config workflow.
 
 - Config store operations on `config/hardware/` (`active.yaml`, `configs/*.yaml`, backups)
 - Validation (schema + URDF cross-check)
-- `ConfigurePipeline` action phases: validate, generate, build (RP2040 cmake/make), flash (`picotool`)
+- `ConfigurePipeline` action phases: **validate → generate → build → flash → reload**
+
+### Phases
+
+| # | Phase | Always runs? | What it does |
+|---|-------|--------------|--------------|
+| 1 | **VALIDATE** | yes | schema + URDF cross-check on the YAML |
+| 2 | **GENERATE** | **yes — including `simulation_only`** | runs `lucy_config_generator` and installs the resulting `inmoov_ros2_control.xacro` and `controllers.yaml` into `thais_urdf` so URDF limits and joint topology are up to date even when no firmware build runs |
+| 3 | **BUILD** | skipped in `simulation_only` / `build_only=false` | RP2040 cmake/make for each selected board |
+| 4 | **FLASH** | skipped in `simulation_only` / `build_only=true` | `sudo picotool load` per board (see below) |
+| 5 | **RELOAD** | yes | calls `/lucy_control/restart` so `robot_state_publisher` + `ros2_control` re-read URDF + controller YAML; Gazebo topology changes still require a relaunch |
+
+Decoupling **GENERATE** from **BUILD** is what lets the LCP "SIMULATION ONLY" toggle update URDF limits and ros2_control wiring without a firmware build.
 
 ## Flash phase (RP2040)
 

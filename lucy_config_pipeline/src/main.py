@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
+from lucy_config_generator.schema import GENERATED_FILES_DEFAULTS, resolve_generated_files
 import rclpy
+import yaml
 
 from .config_store import ConfigStore
 from .pipeline.action_server import PipelineActionServer
@@ -24,6 +26,18 @@ def _infer_robot_source_root(robot_package: str, share_dir: Path) -> Path:
     return share_dir
 
 
+def _active_generated_files(cfg_dir: Path) -> dict[str, str]:
+    """Generated-artifact filenames from the active preset (defaults if unreadable)."""
+    active = cfg_dir / "active.yaml"
+    try:
+        data = yaml.safe_load(active.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return resolve_generated_files(data)
+    except (OSError, ValueError, yaml.YAMLError):
+        pass
+    return dict(GENERATED_FILES_DEFAULTS)
+
+
 def _find_workspace_src(robot_root: Path) -> Path:
     for p in robot_root.parents:
         if p.name == "src":
@@ -36,9 +50,10 @@ def _resolve_paths(robot_package: str, config_dir: str) -> PipelinePaths:
     robot_root = _infer_robot_source_root(robot_package, share_dir)
 
     cfg_dir = Path(config_dir).resolve() if config_dir else (robot_root / "config" / "hardware")
+    names = _active_generated_files(cfg_dir)
     urdf_xacro = robot_root / "description" / "urdf" / "inmoov.urdf.xacro"
     base_path = robot_root / "description"
-    controller_config = robot_root / "config" / "controllers.yaml"
+    controller_config = robot_root / "config" / names["controllers_yaml"]
 
     return PipelinePaths(
         config_dir=cfg_dir,

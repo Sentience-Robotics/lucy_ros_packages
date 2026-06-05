@@ -59,6 +59,16 @@ REQUIRED_BOARD = (
     "controller",
 )
 
+# Generated-artifact filenames. Directories are fixed by repo convention
+# (``description/ros2_control/`` and ``config/``); only the basename is
+# configurable through the optional ``generated_files`` YAML section so the
+# generator, config pipeline, URDF include and launches all agree on names.
+GENERATED_FILES_KEY = "generated_files"
+GENERATED_FILES_DEFAULTS: dict[str, str] = {
+    "ros2_control_xacro": "inmoov_ros2_control.xacro",
+    "controllers_yaml": "controllers.yaml",
+}
+
 # Firmware C template: single internal PWM stack vs internal + I2C (PCA) stack.
 BOARD_CLASS_INTERNAL_ONLY = "internal_servo_only"
 BOARD_CLASS_INTERNAL_I2C_PWM = "internal_servo_i2c_pwm"
@@ -101,6 +111,36 @@ def derive_ros2_node_name(board_id: str) -> str:
     Pattern: ``lucy_hardware_interface_`` + snake_case suffix after ``rp2040_``.
     """
     return "lucy_hardware_interface_" + ros2_hardware_suffix(board_id)
+
+
+def resolve_generated_files(data: dict[str, Any]) -> dict[str, str]:
+    """
+    Return generated-artifact filenames, applying defaults for missing keys.
+
+    The optional ``generated_files`` mapping carries bare filenames (no path
+    separators); the on-disk directories are fixed by repo convention. Unknown
+    keys are ignored so the section can grow without breaking older configs.
+    """
+    section = data.get(GENERATED_FILES_KEY)
+    if section is None:
+        return dict(GENERATED_FILES_DEFAULTS)
+    if not isinstance(section, dict):
+        raise ValueError(f"{GENERATED_FILES_KEY} must be a mapping")
+    out = dict(GENERATED_FILES_DEFAULTS)
+    for key in GENERATED_FILES_DEFAULTS:
+        if key not in section:
+            continue
+        value = section[key]
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{GENERATED_FILES_KEY}.{key} must be a non-empty string")
+        value = value.strip()
+        if "/" in value or "\\" in value or value in (".", ".."):
+            raise ValueError(
+                f"{GENERATED_FILES_KEY}.{key} must be a bare filename "
+                "(no path separators); directories are fixed by convention"
+            )
+        out[key] = value
+    return out
 
 
 def _label(entity: dict[str, Any]) -> str:
@@ -440,6 +480,8 @@ def validate_hardware_yaml(data: dict[str, Any]) -> None:
             raise ValueError(f"missing root key: {key}")
     if data["version"] != 1:
         raise ValueError("version must be 1")
+
+    resolve_generated_files(data)
 
     for passive_key in URDF_PASSIVE_LIST_KEYS + URDF_IGNORE_LIST_KEYS:
         plist = data.get(passive_key)

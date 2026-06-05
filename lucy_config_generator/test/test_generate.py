@@ -13,8 +13,10 @@ import yaml
 
 from lucy_config_generator.generate import generate_from_xacro_string_for_tests
 from lucy_config_generator.schema import (
+    GENERATED_FILES_DEFAULTS,
     derive_ros2_hardware_name,
     derive_ros2_node_name,
+    resolve_generated_files,
     validate_hardware_yaml,
 )
 
@@ -199,16 +201,29 @@ def test_golden_firmware_torso():
 def test_golden_ros2_control():
     data = _load_mapping()
     got = generate_from_xacro_string_for_tests(data, _fixture_urdf_xml(), {"ros2_control"}, None)[
-        "inmoov_ros2_control.xacro"
+        GENERATED_FILES_DEFAULTS["ros2_control_xacro"]
     ]
     expected = (_FIXTURES / "golden_inmoov_ros2_control.xacro").read_text(encoding="utf-8")
     assert got == expected
 
 
+def test_ros2_control_emits_urdf_limits_on_command_interface():
+    data = _load_mapping()
+    got = generate_from_xacro_string_for_tests(data, _fixture_urdf_xml(), {"ros2_control"}, None)[
+        GENERATED_FILES_DEFAULTS["ros2_control_xacro"]
+    ]
+    assert 'name="left_shoulder_y_link_joint"' in got
+    assert '<param name="min">0.0</param>' in got
+    assert '<param name="max">1.0</param>' in got
+    # Every actuated revolute in the fixture has limits 0..1 rad.
+    assert got.count('<param name="min">') == 5
+    assert got.count('<param name="max">') == 5
+
+
 def test_golden_controllers_extra_joints():
     data = _load_mapping()
     got = generate_from_xacro_string_for_tests(data, _fixture_urdf_xml(), {"controllers"}, None)[
-        "controllers.yaml"
+        GENERATED_FILES_DEFAULTS["controllers_yaml"]
     ]
     expected = (_FIXTURES / "golden_controllers.yaml").read_text(encoding="utf-8")
     assert got == expected
@@ -223,3 +238,40 @@ def test_boards_filter_emits_subset():
         {"rp2040_left_arm"},
     )
     assert set(got.keys()) == {"config_rp2040_left_arm.c"}
+
+
+def test_generated_files_defaults_when_section_absent():
+    assert resolve_generated_files(_load_mapping()) == GENERATED_FILES_DEFAULTS
+
+
+def test_generated_files_override_basenames():
+    data = _load_mapping()
+    data["generated_files"] = {
+        "ros2_control_xacro": "thais_ros2_control.xacro",
+        "controllers_yaml": "thais_controllers.yaml",
+    }
+    assert resolve_generated_files(data) == {
+        "ros2_control_xacro": "thais_ros2_control.xacro",
+        "controllers_yaml": "thais_controllers.yaml",
+    }
+
+
+def test_generated_files_rejects_path_separator():
+    data = _load_mapping()
+    data["generated_files"] = {"controllers_yaml": "config/controllers.yaml"}
+    with pytest.raises(ValueError, match="bare filename"):
+        validate_hardware_yaml(data)
+
+
+def test_generated_files_basenames_drive_output_keys():
+    data = _load_mapping()
+    data["generated_files"] = {
+        "ros2_control_xacro": "thais_ros2_control.xacro",
+        "controllers_yaml": "thais_controllers.yaml",
+    }
+    got = generate_from_xacro_string_for_tests(
+        data, _fixture_urdf_xml(), {"ros2_control", "controllers"}, None
+    )
+    assert "thais_ros2_control.xacro" in got
+    assert "thais_controllers.yaml" in got
+    assert GENERATED_FILES_DEFAULTS["ros2_control_xacro"] not in got
