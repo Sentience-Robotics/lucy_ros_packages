@@ -27,15 +27,11 @@ Arguments:
   nodes are not constructed (``OpaqueFunction``), so e.g. Docker without ``micro_ros_agent``
   can run ``real:=false``.
 - ``rviz`` (default ``false``): RViz2 (real/sim time set per mode). With ``gazebo:=true``,
-  forwarded as ``start_rviz`` to ``thais_urdf/gazebo.launch.py`` (no second RViz).
-- ``gazebo`` (default ``false``): GZ Sim stack from ``thais_urdf``; requires ``real:=false``.
+  forwarded as ``start_rviz`` to ``inmoov_urdf/gazebo.launch.py`` (no second RViz).
+- ``gazebo`` (default ``false``): GZ Sim stack from ``inmoov_urdf``; requires ``real:=false``.
 - ``headless`` (default ``false``): only meaningful with ``gazebo:=true``. Runs gz-sim
   server-only with EGL rendering (``-s -r --headless-rendering``) so camera sensors
-  keep producing frames without an X server. Forwarded to ``thais_urdf/gazebo.launch.py``.
-
-URDF uniform length scale lives in
-``thais_urdf/description/robot_description/urdf/properties.xacro``
-(``model_scale`` xacro property) — not a launch argument.
+  keep producing frames without an X server. Forwarded to ``inmoov_urdf/gazebo.launch.py``.
 
 """
 
@@ -79,9 +75,84 @@ def _infer_robot_source_root(robot_package: str, share_dir: str) -> Path:
     return share
 
 
+def _discover_robot_packages():
+    """
+    List installed robot-description packages (launch/control.launch.py + description/).
+
+    Identifies URDF/robot packages via their shared
+    layout, so the bringup can auto-select when only one is present.
+    """
+    from ament_index_python.packages import get_packages_with_prefixes
+
+    found = []
+    for pkg, prefix in get_packages_with_prefixes().items():
+        share = Path(prefix) / "share" / pkg
+        if (share / "launch" / "control.launch.py").is_file() and (
+            share / "description"
+        ).is_dir():
+            found.append(pkg)
+    return sorted(found)
+
+
+def _default_robot_package():
+    """
+    Auto-pick the sole robot package; prefer inmoov_urdf when several are built.
+
+    Returns an empty string when none is discovered, leaving ``robot_package``
+    unset so ``_validate_lucy_launch`` can fail with a clear message instead of
+    silently assuming a package that is not installed.
+    """
+    pkgs = _discover_robot_packages()
+    if len(pkgs) == 1:
+        return pkgs[0]
+    if "inmoov_urdf" in pkgs:
+        return "inmoov_urdf"
+    if pkgs:
+        return pkgs[0]
+    return ""
+
+
+def _resolve_robot_paths(context):
+    """
+    Fill urdf_path / base_path / controllers_yaml from the selected robot_package.
+
+    Lets ``robot_package:=<pkg>`` switch the URDF, base meshes and controllers
+    together. Explicit ``urdf_path`` / ``base_path`` / ``controllers_yaml``
+    overrides (non-empty) are left untouched.
+    """
+    from launch.actions import SetLaunchConfiguration
+
+    robot_package = LaunchConfiguration("robot_package").perform(context).strip()
+    if not robot_package:
+        # _validate_lucy_launch already raised; nothing to resolve.
+        return []
+    share = get_package_share_directory(robot_package)
+    robot_root = _infer_robot_source_root(robot_package, share)
+
+    defaults = {
+        "urdf_path": str(robot_root / "description" / "urdf" / "inmoov.urdf.xacro"),
+        "base_path": str(robot_root / "description"),
+        "controllers_yaml": str(robot_root / "config" / "controllers.yaml"),
+    }
+    actions = []
+    for key, default_value in defaults.items():
+        if not LaunchConfiguration(key).perform(context).strip():
+            actions.append(SetLaunchConfiguration(key, default_value))
+    return actions
+
+
 def _validate_lucy_launch(context):
     gz = LaunchConfiguration("gazebo").perform(context).lower()
     real = LaunchConfiguration("real").perform(context).lower()
+    robot_package = LaunchConfiguration("robot_package").perform(context).strip()
+
+    if not robot_package:
+        raise RuntimeError(
+            "lucy.launch.py: no robot-description package found in the workspace "
+            "(expected one with launch/control.launch.py + description/, e.g. "
+            "inmoov_urdf). Clone/build a robot package, or pass one "
+            "explicitly with robot_package:=<pkg>."
+        )
 
     def _is_true(val):
         return val in ("true", "1", "yes")
@@ -182,8 +253,12 @@ def generate_launch_description():
 
     robot_package_arg = DeclareLaunchArgument(
         "robot_package",
-        default_value="thais_urdf",
-        description="Robot package: control.launch.py + config paths + RViz config + URDF",
+        default_value=_default_robot_package(),
+        description=(
+            "Robot package: control.launch.py + config paths + RViz config + URDF. "
+            "Defaults to the only installed robot package when just one is present, "
+            "else inmoov_urdf."
+        ),
     )
 
     config_dir_arg = DeclareLaunchArgument(
@@ -210,7 +285,7 @@ def generate_launch_description():
     gazebo_arg = DeclareLaunchArgument(
         "gazebo",
         default_value="false",
-        description="If true: thais_urdf gazebo sim (requires real:=false)",
+        description="If true: <robot_package> gazebo sim (requires real:=false)",
     )
 
     headless_arg = DeclareLaunchArgument(
@@ -222,32 +297,34 @@ def generate_launch_description():
         ),
     )
 
-    robot_pkg_default = "thais_urdf"
-    share = get_package_share_directory(robot_pkg_default)
-    robot_root = _infer_robot_source_root(robot_pkg_default, share)
-    default_base = str(robot_root / "description")
-    default_urdf = str(robot_root / "description" / "urdf" / "inmoov.urdf.xacro")
-    default_controllers = str(robot_root / "config" / "controllers.yaml")
-
+    # Empty defaults: _resolve_robot_paths fills these from the selected
+    # robot_package at launch time, so robot_package:=<pkg> switches the URDF,
+    # base meshes and controllers together. Non-empty overrides are respected.
     urdf_path_arg = DeclareLaunchArgument(
         "urdf_path",
-        default_value=default_urdf,
-        description="Forwarded to thais_urdf gazebo.launch.py when gazebo:=true",
+        default_value="",
+        description=(
+            "URDF/xacro entry. Empty -> "
+            "<robot_package>/description/urdf/inmoov.urdf.xacro"
+        ),
     )
     base_path_arg = DeclareLaunchArgument(
         "base_path",
-        default_value=default_base,
-        description="Forwarded to thais_urdf gazebo.launch.py when gazebo:=true",
+        default_value="",
+        description="xacro base_path. Empty -> <robot_package>/description",
     )
     urdf_path = LaunchConfiguration("urdf_path")
     base_path = LaunchConfiguration("base_path")
     controllers_yaml_arg = DeclareLaunchArgument(
         "controllers_yaml",
-        default_value=default_controllers,
-        description="controllers.yaml path (source tree; same as pipeline install target)",
+        default_value="",
+        description=(
+            "controllers.yaml path. Empty -> <robot_package>/config/controllers.yaml"
+        ),
     )
 
     validate = OpaqueFunction(function=_validate_lucy_launch)
+    resolve_robot_paths = OpaqueFunction(function=_resolve_robot_paths)
 
     web_ros_api_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -320,7 +397,7 @@ def generate_launch_description():
                     [
                         PathJoinSubstitution(
                             [
-                                FindPackageShare("thais_urdf"),
+                                FindPackageShare(LaunchConfiguration("robot_package")),
                                 "launch",
                                 "rviz.launch.py",
                             ]
@@ -342,7 +419,7 @@ def generate_launch_description():
                     [
                         PathJoinSubstitution(
                             [
-                                FindPackageShare("thais_urdf"),
+                                FindPackageShare(LaunchConfiguration("robot_package")),
                                 "launch",
                                 "gazebo.launch.py",
                             ]
@@ -408,6 +485,7 @@ def generate_launch_description():
             base_path_arg,
             controllers_yaml_arg,
             validate,
+            resolve_robot_paths,
             LogInfo(msg="========================================"),
             LogInfo(msg="Starting lucy_bringup lucy.launch.py"),
             LogInfo(msg="========================================"),
