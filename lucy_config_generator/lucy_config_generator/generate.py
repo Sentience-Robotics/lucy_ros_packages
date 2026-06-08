@@ -25,7 +25,6 @@ from lucy_config_generator.schema import (
 )
 
 
-
 def _templates_dir() -> Path:
     return Path(__file__).resolve().parent / "templates"
 
@@ -161,7 +160,9 @@ def _sensors_for_board(data: dict[str, Any], board_id: str) -> list[dict[str, An
     return out
 
 
-def _sensors_for_board_firmware(data: dict[str, Any], board_id: str) -> list[dict[str, Any]]:
+def _sensors_for_board_firmware(
+    data: dict[str, Any], board_id: str
+) -> list[dict[str, Any]]:
     """Pressure rows only if their associated actuator is enabled (matches firmware C scope)."""
     enabled_ids = {a["id"] for a in data["actuators"] if a.get("enabled", True)}
     out = [
@@ -354,7 +355,9 @@ def render_controllers_yaml(
     )
 
 
-def _resolve_board_ids(data: dict[str, Any], boards_filter: set[str] | None) -> list[str]:
+def _resolve_board_ids(
+    data: dict[str, Any], boards_filter: set[str] | None
+) -> list[str]:
     board_ids = _board_ids_in_yaml_order(data)
     if boards_filter is not None:
         board_ids = [b for b in board_ids if b in boards_filter]
