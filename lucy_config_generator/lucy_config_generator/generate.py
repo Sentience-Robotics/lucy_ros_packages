@@ -11,11 +11,10 @@ import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
+from collections import defaultdict
 
 import jinja2
 import yaml
-
-type YAMLDict = YAMLDict
 
 from lucy_config_generator.schema import (
     BOARD_CLASS_INTERNAL_I2C_PWM,
@@ -26,6 +25,8 @@ from lucy_config_generator.schema import (
     validate_hardware_yaml,
 )
 
+
+type YAMLDict = dict[str, Any]
 
 def _templates_dir() -> Path:
     return Path(__file__).resolve().parent / "templates"
@@ -209,21 +210,13 @@ def _ros2_control_blocks(
         )
     return blocks
 
-"""
-
-    name: 'Realsense Aligned Depth'
-    topic: '/realsense/realsense2_camera/aligned_depth_to_color/image_raw/compressed'
-    messageType: 'sensor_msgs/msg/CompressedImage'
-    external: false
-    link:
-"""
-
-def _gazebo(
+def _gazebo_cameras(
     data: YAMLDict
 ) -> list[YAMLDict]:
     cameras: list[YAMLDict] = []
     for camera in data["cameras"]:
-        print(camera)
+        if camera["external"]:
+            continue
         cameras.append(
             {
                 "name": camera["name"],
@@ -235,6 +228,25 @@ def _gazebo(
         )
 
     return cameras
+
+def _gazebo_sensors(
+    data: YAMLDict
+) -> list[YAMLDict]:
+    sensors: list[YAMLDict] = []
+
+    tmp_dict = {}
+    for sensor in data["sensors"]:
+        board_name = sensor["board"]
+        tmp_dict.setdefault(board_name, []).append({})
+
+    for board_name, board_data in data["boards"].items():
+        if board_name not in tmp_dict:
+            continue
+        sensors.append({
+            "topic": board_data["topic_sensors"],
+            "sensors": tmp_dict[board_name]
+        })
+    return sensors
 
 
 def _extra_joints(data: YAMLDict, urdf_joints: set[str]) -> list[str]:
@@ -293,7 +305,17 @@ def render_gazebo_xacro(
 ) -> str:
     env = env or _jinja_env()
     tpl = env.get_template("gazebo.xacro.j2")
-    return tpl.render(blocks=_ros2_control_blocks(data, board_ids, urdf_limits), cameras=_gazebo(data));
+    return tpl.render(blocks=_ros2_control_blocks(data, board_ids, urdf_limits), cameras=_gazebo_cameras(data), sensors=_gazebo_sensors(data));
+
+def render_gazebo_bridge(
+    data: YAMLDict,
+    board_ids: list[str],
+    urdf_limits: dict[str, tuple[float, float]],
+    env: jinja2.Environment | None = None,
+) -> str:
+    env = env or _jinja_env()
+    tpl = env.get_template("gazebo_bridge.yaml.j2")
+    return tpl.render(blocks=_ros2_control_blocks(data, board_ids, urdf_limits), cameras=_gazebo_cameras(data), sensors=_gazebo_sensors(data));
 
 def render_controllers_yaml(
     data: YAMLDict,
@@ -388,8 +410,13 @@ def generate(
 
     if targets & {"gazebo", "all"}:
         xacro_out = output_dir / "gazebo.xacro"
+        bridge_out = output_dir / "gazebo_bridge.yaml"
         xacro_out.write_text(
             render_gazebo_xacro(data, ros2_control_boards, urdf_limits, env),
+            encoding="utf-8"
+        )
+        bridge_out.write_text(
+            render_gazebo_bridge(data, ros2_control_boards, urdf_limits, env),
             encoding="utf-8"
         )
 
