@@ -59,7 +59,6 @@ from launch.substitutions import (
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
-from launch_ros.parameter_descriptions import ParameterValue
 
 
 def _infer_robot_source_root(robot_package: str, share_dir: str) -> Path:
@@ -368,22 +367,27 @@ def generate_launch_description():
                 urdf_path,
                 " base_path:=",
                 base_path,
-                " use_gazebo_sim:=", LaunchConfiguration('gazebo'),
-                " use_mock_hardware:=", use_mock_hardware,
+                " use_gazebo_sim:=",
+                LaunchConfiguration("gazebo"),
+                " use_mock_hardware:=",
+                use_mock_hardware,
                 " controller_config:=",
                 controllers_yaml,
             ]
         ),
         value_type=str,
     )
-    robot_description_dict = {"robot_description": ParameterValue(robot_description, value_type=str)}
+    robot_description_dict = {"robot_description": robot_description}
 
     robot_state_publisher = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
         name="robot_state_publisher",
         output="screen",
-        parameters=[robot_description_dict, {"use_sim_time": LaunchConfiguration("gazebo")}],
+        parameters=[
+            robot_description_dict,
+            {"use_sim_time": LaunchConfiguration("gazebo")},
+        ],
         condition=IfCondition(LaunchConfiguration("gazebo")),
     )
 

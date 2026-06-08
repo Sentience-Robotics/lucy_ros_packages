@@ -11,7 +11,6 @@ import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
-from collections import defaultdict
 
 import jinja2
 import yaml
@@ -26,7 +25,6 @@ from lucy_config_generator.schema import (
 )
 
 
-type YAMLDict = dict[str, Any]
 
 def _templates_dir() -> Path:
     return Path(__file__).resolve().parent / "templates"
@@ -41,7 +39,7 @@ def _jinja_env() -> jinja2.Environment:
     )
 
 
-def load_hardware_yaml(path: Path) -> YAMLDict:
+def load_hardware_yaml(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
@@ -49,7 +47,9 @@ def load_hardware_yaml(path: Path) -> YAMLDict:
     return data
 
 
-def _xacro_argv(urdf_xacro: Path, base_path: Path, controller_config: Path) -> list[str]:
+def _xacro_argv(
+    urdf_xacro: Path, base_path: Path, controller_config: Path
+) -> list[str]:
     """Prefer ``ros2 run xacro xacro`` so broken distro ``xacro`` console scripts still work."""
     tail = [
         str(urdf_xacro),
@@ -62,8 +62,7 @@ def _xacro_argv(urdf_xacro: Path, base_path: Path, controller_config: Path) -> l
     if shutil.which("xacro") is not None:
         return ["xacro", *tail]
     raise RuntimeError(
-        "Need 'ros2' (for `ros2 run xacro xacro`) "
-        "or `xacro` on PATH to process URDF"
+        "Need 'ros2' (for `ros2 run xacro xacro`) " "or `xacro` on PATH to process URDF"
     )
 
 
@@ -134,7 +133,7 @@ def urdf_joint_limits(
     return limits
 
 
-def _board_ids_in_yaml_order(data: YAMLDict) -> list[str]:
+def _board_ids_in_yaml_order(data: dict[str, Any]) -> list[str]:
     """Preserve ``boards:`` key order from YAML (PyYAML + Python 3.7+ dict order)."""
     boards = data["boards"]
     if not isinstance(boards, dict):
@@ -143,9 +142,9 @@ def _board_ids_in_yaml_order(data: YAMLDict) -> list[str]:
 
 
 def _actuators_for_board(
-    data: YAMLDict, board_id: str, *, enabled_only: bool
-) -> list[YAMLDict]:
-    out: list[YAMLDict] = []
+    data: dict[str, Any], board_id: str, *, enabled_only: bool
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     for a in data["actuators"]:
         if a["board"] != board_id:
             continue
@@ -156,13 +155,13 @@ def _actuators_for_board(
     return out
 
 
-def _sensors_for_board(data: YAMLDict, board_id: str) -> list[dict[str, Any]]:
+def _sensors_for_board(data: dict[str, Any], board_id: str) -> list[dict[str, Any]]:
     out = [s for s in data["sensors"] if s["board"] == board_id]
     out.sort(key=lambda x: int(x["virtual_pin"]))
     return out
 
 
-def _sensors_for_board_firmware(data: YAMLDict, board_id: str) -> list[dict[str, Any]]:
+def _sensors_for_board_firmware(data: dict[str, Any], board_id: str) -> list[dict[str, Any]]:
     """Pressure rows only if their associated actuator is enabled (matches firmware C scope)."""
     enabled_ids = {a["id"] for a in data["actuators"] if a.get("enabled", True)}
     out = [
@@ -188,11 +187,11 @@ def _actuator_joint_for_ros2(
 
 
 def _ros2_control_blocks(
-    data: YAMLDict,
+    data: dict[str, Any],
     board_ids: list[str],
     urdf_limits: dict[str, tuple[float, float]],
-) -> list[YAMLDict]:
-    blocks: list[YAMLDict] = []
+) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
     for bid in board_ids:
         bdef = data["boards"][bid]
         joints = [
@@ -210,10 +209,9 @@ def _ros2_control_blocks(
         )
     return blocks
 
-def _gazebo_cameras(
-    data: YAMLDict
-) -> list[YAMLDict]:
-    cameras: list[YAMLDict] = []
+
+def _gazebo_cameras(data: dict[str, Any]) -> list[dict[str, Any]]:
+    cameras: list[dict[str, Any]] = []
     for camera in data["cameras"]:
         if camera["external"]:
             continue
@@ -223,16 +221,15 @@ def _gazebo_cameras(
                 "topic": camera["topic"],
                 "message_type": camera["message_type"],
                 "external": camera["external"],
-                "link": camera["link"] if "link" in camera else "None"
+                "link": camera["link"] if "link" in camera else "None",
             }
         )
 
     return cameras
 
-def _gazebo_sensors(
-    data: YAMLDict
-) -> list[YAMLDict]:
-    sensors: list[YAMLDict] = []
+
+def _gazebo_sensors(data: dict[str, Any]) -> list[dict[str, Any]]:
+    sensors: list[dict[str, Any]] = []
 
     tmp_dict = {}
     for sensor in data["sensors"]:
@@ -242,14 +239,13 @@ def _gazebo_sensors(
     for board_name, board_data in data["boards"].items():
         if board_name not in tmp_dict:
             continue
-        sensors.append({
-            "topic": board_data["topic_sensors"],
-            "sensors": tmp_dict[board_name]
-        })
+        sensors.append(
+            {"topic": board_data["topic_sensors"], "sensors": tmp_dict[board_name]}
+        )
     return sensors
 
 
-def _extra_joints(data: YAMLDict, urdf_joints: set[str]) -> list[str]:
+def _extra_joints(data: dict[str, Any], urdf_joints: set[str]) -> list[str]:
     """
     Joints published at default via broadcaster, not listed on Lucy hardware blocks.
 
@@ -269,8 +265,9 @@ def _firmware_template_for_board_class(board_class: str) -> str:
         return "config_internal_only_board.c.j2"
     raise ValueError(f"unknown board_class for firmware template: {board_class!r}")
 
+
 def render_firmware_c(
-    data: YAMLDict,
+    data: dict[str, Any],
     board_id: str,
     env: jinja2.Environment | None = None,
 ) -> str:
@@ -288,7 +285,7 @@ def render_firmware_c(
 
 
 def render_ros2_control_xacro(
-    data: YAMLDict,
+    data: dict[str, Any],
     board_ids: list[str],
     urdf_limits: dict[str, tuple[float, float]],
     env: jinja2.Environment | None = None,
@@ -297,39 +294,52 @@ def render_ros2_control_xacro(
     tpl = env.get_template("ros2_control.xacro.j2")
     return tpl.render(blocks=_ros2_control_blocks(data, board_ids, urdf_limits))
 
+
 def render_gazebo_xacro(
-    data: YAMLDict,
+    data: dict[str, Any],
     board_ids: list[str],
     urdf_limits: dict[str, tuple[float, float]],
     env: jinja2.Environment | None = None,
 ) -> str:
     env = env or _jinja_env()
     tpl = env.get_template("gazebo.xacro.j2")
-    return tpl.render(blocks=_ros2_control_blocks(data, board_ids, urdf_limits), cameras=_gazebo_cameras(data), sensors=_gazebo_sensors(data));
+    return tpl.render(
+        blocks=_ros2_control_blocks(data, board_ids, urdf_limits),
+        cameras=_gazebo_cameras(data),
+        sensors=_gazebo_sensors(data),
+    )
+
 
 def render_gazebo_bridge(
-    data: YAMLDict,
+    data: dict[str, Any],
     board_ids: list[str],
     urdf_limits: dict[str, tuple[float, float]],
     env: jinja2.Environment | None = None,
 ) -> str:
     env = env or _jinja_env()
     tpl = env.get_template("gazebo_bridge.yaml.j2")
-    return tpl.render(blocks=_ros2_control_blocks(data, board_ids, urdf_limits), cameras=_gazebo_cameras(data), sensors=_gazebo_sensors(data));
+    return tpl.render(
+        blocks=_ros2_control_blocks(data, board_ids, urdf_limits),
+        cameras=_gazebo_cameras(data),
+        sensors=_gazebo_sensors(data),
+    )
+
 
 def render_controllers_yaml(
-    data: YAMLDict,
+    data: dict[str, Any],
     board_ids: list[str],
     extra_joints: list[str],
     env: jinja2.Environment | None = None,
 ) -> str:
     env = env or _jinja_env()
     tpl = env.get_template("controllers.yaml.j2")
-    controllers: list[YAMLDict] = []
+    controllers: list[dict[str, Any]] = []
     update_rate = int(data["controller_manager"]["update_rate"])
     for bid in board_ids:
         ctrl = data["boards"][bid]["controller"]
-        joints = [a["urdf_joint"] for a in _actuators_for_board(data, bid, enabled_only=False)]
+        joints = [
+            a["urdf_joint"] for a in _actuators_for_board(data, bid, enabled_only=False)
+        ]
         controllers.append(
             {
                 "name": ctrl["name"],
@@ -344,9 +354,7 @@ def render_controllers_yaml(
     )
 
 
-def _resolve_board_ids(
-    data: YAMLDict, boards_filter: set[str] | None
-) -> list[str]:
+def _resolve_board_ids(data: dict[str, Any], boards_filter: set[str] | None) -> list[str]:
     board_ids = _board_ids_in_yaml_order(data)
     if boards_filter is not None:
         board_ids = [b for b in board_ids if b in boards_filter]
@@ -413,16 +421,16 @@ def generate(
         bridge_out = output_dir / "gazebo_bridge.yaml"
         xacro_out.write_text(
             render_gazebo_xacro(data, ros2_control_boards, urdf_limits, env),
-            encoding="utf-8"
+            encoding="utf-8",
         )
         bridge_out.write_text(
             render_gazebo_bridge(data, ros2_control_boards, urdf_limits, env),
-            encoding="utf-8"
+            encoding="utf-8",
         )
 
 
 def generate_from_xacro_string_for_tests(
-    data: YAMLDict,
+    data: dict[str, Any],
     urdf_xml: str,
     targets: set[str],
     boards_filter: set[str] | None = None,
@@ -449,5 +457,7 @@ def generate_from_xacro_string_for_tests(
             data, board_ids, urdf_limits, env
         )
     if targets & {"controllers", "all"}:
-        out[names["controllers_yaml"]] = render_controllers_yaml(data, board_ids, extra, env)
+        out[names["controllers_yaml"]] = render_controllers_yaml(
+            data, board_ids, extra, env
+        )
     return out
