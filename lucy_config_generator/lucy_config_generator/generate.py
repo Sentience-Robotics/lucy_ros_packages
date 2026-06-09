@@ -9,8 +9,8 @@ from __future__ import annotations
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
-from pathlib import Path
 from typing import Any
+from pathlib import Path
 
 import jinja2
 import yaml
@@ -213,6 +213,8 @@ def _ros2_control_blocks(
 
 def _gazebo_cameras(data: dict[str, Any]) -> list[dict[str, Any]]:
     cameras: list[dict[str, Any]] = []
+    if "cameras" not in data:
+        return cameras
     for camera in data["cameras"]:
         if camera["external"]:
             continue
@@ -225,12 +227,13 @@ def _gazebo_cameras(data: dict[str, Any]) -> list[dict[str, Any]]:
                 "link": camera["link"] if "link" in camera else "None",
             }
         )
-
     return cameras
 
 
 def _gazebo_sensors(data: dict[str, Any]) -> list[dict[str, Any]]:
     sensors: list[dict[str, Any]] = []
+    if "sensors" not in data:
+        return sensors
 
     tmp_dict = {}
     for sensor in data["sensors"]:

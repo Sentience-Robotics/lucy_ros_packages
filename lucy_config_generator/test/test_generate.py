@@ -198,7 +198,6 @@ def test_golden_firmware_torso():
     assert got == expected
 
 
-""" DEPRECATED
 def test_golden_ros2_control():
     data = _load_mapping()
     got = generate_from_xacro_string_for_tests(data, _fixture_urdf_xml(), {"ros2_control"}, None)[
@@ -206,7 +205,6 @@ def test_golden_ros2_control():
     ]
     expected = (_FIXTURES / "golden_inmoov_ros2_control.xacro").read_text(encoding="utf-8")
     assert got == expected
-"""
 
 
 def test_ros2_control_emits_urdf_limits_on_command_interface():

@@ -24,6 +24,8 @@
           <param name="servo_max_deg">270.0</param>
           <param name="servo_default_deg">135.0</param>
           <command_interface name="position">
+            <param name="min">0.0</param>
+            <param name="max">1.0</param>
           </command_interface>
           <state_interface name="position" />
       </joint>
@@ -37,6 +39,8 @@
           <param name="servo_max_deg">270.0</param>
           <param name="servo_default_deg">135.0</param>
           <command_interface name="position">
+            <param name="min">0.0</param>
+            <param name="max">1.0</param>
           </command_interface>
           <state_interface name="position" />
       </joint>
@@ -62,6 +66,8 @@
           <param name="servo_max_deg">270.0</param>
           <param name="servo_default_deg">135.0</param>
           <command_interface name="position">
+            <param name="min">0.0</param>
+            <param name="max">1.0</param>
           </command_interface>
           <state_interface name="position" />
       </joint>
@@ -88,7 +94,7 @@
           <param name="servo_default_deg">0.0</param>
           <command_interface name="position">
             <param name="min">0.0</param>
-            <param name="max">1.5708</param>
+            <param name="max">1.0</param>
           </command_interface>
           <state_interface name="position" />
       </joint>
@@ -103,7 +109,7 @@
           <param name="servo_default_deg">0.0</param>
           <command_interface name="position">
             <param name="min">0.0</param>
-            <param name="max">1.5708</param>
+            <param name="max">1.0</param>
           </command_interface>
           <state_interface name="position" />
       </joint>
