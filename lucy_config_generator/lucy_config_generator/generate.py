@@ -211,16 +211,21 @@ def _ros2_control_blocks(
     return blocks
 
 
-
 def _gazebo_camera_entry(camera: dict[str, Any]) -> dict[str, Any] | None:
     """One Gazebo-sim camera for bridge/republish, or None when not simulated."""
     if not isinstance(camera, dict):
         return None
+
     topic = camera.get("topic")
     if not isinstance(topic, str) or not topic.strip():
         return None
-    raw_topic = topic.strip()
-    compressed_topic = topic + "/compressed"
+    topic = topic.strip()
+
+    compressed_topic = camera.get("compressed_topic")
+    if not isinstance(compressed_topic, str) or not compressed_topic.strip():
+        return None
+    compressed_topic = compressed_topic.strip()
+
     external = bool(camera.get("external"))
     if external:
         gz_topic = camera.get("sim_gz_topic")
@@ -232,12 +237,11 @@ def _gazebo_camera_entry(camera: dict[str, Any]) -> dict[str, Any] | None:
         link = camera.get("link")
         if not isinstance(link, str) or not link.strip():
             return None
-        gz_topic = raw_topic
+        gz_topic = topic
         link = link.strip()
     return {
         "name": camera["name"],
         "topic": topic,
-        "raw_topic": raw_topic,
         "compressed_topic": compressed_topic,
         "gz_topic": gz_topic,
         "message_type": camera["message_type"],

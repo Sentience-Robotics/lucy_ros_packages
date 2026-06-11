@@ -6,7 +6,7 @@
   direction: GZ_TO_ROS
 {% for camera in cameras %}
 # Raw frames; gazebo.launch.py republishes {{ camera.raw_topic }} -> {{ camera.topic }} (CompressedImage) for the LCP.
-- ros_topic_name: "{{ camera.raw_topic }}"
+- ros_topic_name: "{{ camera.topic }}"
   gz_topic_name: "{{ camera.gz_topic }}"
   ros_type_name: "sensor_msgs/msg/Image"
   gz_type_name: "gz.msgs.Image"

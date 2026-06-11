@@ -43,7 +43,7 @@
       <update_rate>30.0</update_rate>
       <visualize>true</visualize>
       <!-- gz publishes raw frames here; gazebo.launch.py republishes raw->compressed onto {{ camera.topic }} for the LCP. -->
-      <topic>{{ camera.raw_topic }}</topic>
+      <topic>{{ camera.topic }}</topic>
       <camera name="camera">
         <horizontal_fov>1.047</horizontal_fov>
         <image>
