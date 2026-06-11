@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.targets == "all":
-        targets = {"firmware", "ros2_control", "controllers"}
+        targets = {"firmware", "ros2_control", "controllers", "gazebo"}
     else:
         targets = {args.targets}
     boards_filter: set[str] | None = None

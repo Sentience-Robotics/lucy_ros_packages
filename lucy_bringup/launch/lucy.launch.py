@@ -367,8 +367,10 @@ def generate_launch_description():
                 urdf_path,
                 " base_path:=",
                 base_path,
-                " use_gazebo_sim:=", LaunchConfiguration('gazebo'),
-                " use_mock_hardware:=", use_mock_hardware,
+                " use_gazebo_sim:=",
+                LaunchConfiguration("gazebo"),
+                " use_mock_hardware:=",
+                use_mock_hardware,
                 " controller_config:=",
                 controllers_yaml,
             ]
@@ -382,7 +384,10 @@ def generate_launch_description():
         executable="robot_state_publisher",
         name="robot_state_publisher",
         output="screen",
-        parameters=[robot_description_dict, {"use_sim_time": LaunchConfiguration("gazebo")}],
+        parameters=[
+            robot_description_dict,
+            {"use_sim_time": LaunchConfiguration("gazebo")},
+        ],
         condition=IfCondition(LaunchConfiguration("gazebo")),
     )
 

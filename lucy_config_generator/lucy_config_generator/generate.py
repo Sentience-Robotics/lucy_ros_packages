@@ -9,8 +9,8 @@ from __future__ import annotations
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
-from pathlib import Path
 from typing import Any
+from pathlib import Path
 
 import jinja2
 import yaml
@@ -46,7 +46,9 @@ def load_hardware_yaml(path: Path) -> dict[str, Any]:
     return data
 
 
-def _xacro_argv(urdf_xacro: Path, base_path: Path, controller_config: Path) -> list[str]:
+def _xacro_argv(
+    urdf_xacro: Path, base_path: Path, controller_config: Path
+) -> list[str]:
     """Prefer ``ros2 run xacro xacro`` so broken distro ``xacro`` console scripts still work."""
     tail = [
         str(urdf_xacro),
@@ -59,8 +61,7 @@ def _xacro_argv(urdf_xacro: Path, base_path: Path, controller_config: Path) -> l
     if shutil.which("xacro") is not None:
         return ["xacro", *tail]
     raise RuntimeError(
-        "Need 'ros2' (for `ros2 run xacro xacro`) "
-        "or `xacro` on PATH to process URDF"
+        "Need 'ros2' (for `ros2 run xacro xacro`) " "or `xacro` on PATH to process URDF"
     )
 
 
@@ -159,7 +160,9 @@ def _sensors_for_board(data: dict[str, Any], board_id: str) -> list[dict[str, An
     return out
 
 
-def _sensors_for_board_firmware(data: dict[str, Any], board_id: str) -> list[dict[str, Any]]:
+def _sensors_for_board_firmware(
+    data: dict[str, Any], board_id: str
+) -> list[dict[str, Any]]:
     """Pressure rows only if their associated actuator is enabled (matches firmware C scope)."""
     enabled_ids = {a["id"] for a in data["actuators"] if a.get("enabled", True)}
     out = [
@@ -206,6 +209,81 @@ def _ros2_control_blocks(
             }
         )
     return blocks
+
+
+def _gazebo_camera_entry(camera: dict[str, Any]) -> dict[str, Any] | None:
+    """One Gazebo-sim camera for bridge/republish, or None when not simulated."""
+    if not isinstance(camera, dict):
+        return None
+
+    topic = camera.get("topic")
+    if not isinstance(topic, str) or not topic.strip():
+        return None
+    topic = topic.strip()
+
+    compressed_topic = camera.get("compressed_topic")
+    if not isinstance(compressed_topic, str) or not compressed_topic.strip():
+        return None
+    compressed_topic = compressed_topic.strip()
+
+    external = bool(camera.get("external"))
+    if external:
+        gz_topic = camera.get("sim_gz_topic")
+        if not isinstance(gz_topic, str) or not gz_topic.strip():
+            return None
+        gz_topic = gz_topic.strip()
+        link = None
+    else:
+        link = camera.get("link")
+        if not isinstance(link, str) or not link.strip():
+            return None
+        gz_topic = topic
+        link = link.strip()
+    return {
+        "name": camera["name"],
+        "topic": topic,
+        "compressed_topic": compressed_topic,
+        "gz_topic": gz_topic,
+        "message_type": camera["message_type"],
+        "external": external,
+        "link": link,
+    }
+
+
+def _gazebo_bridge_cameras(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Cameras bridged in sim (robot-mounted + external world cameras)."""
+    cameras: list[dict[str, Any]] = []
+    if "cameras" not in data:
+        return cameras
+    for camera in data["cameras"]:
+        entry = _gazebo_camera_entry(camera)
+        if entry is not None:
+            cameras.append(entry)
+    return cameras
+
+
+def _gazebo_xacro_cameras(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Robot-mounted gz camera sensors only (excludes external/world cameras)."""
+    return [c for c in _gazebo_bridge_cameras(data) if not c["external"]]
+
+
+def _gazebo_sensors(data: dict[str, Any]) -> list[dict[str, Any]]:
+    sensors: list[dict[str, Any]] = []
+    if "sensors" not in data:
+        return sensors
+
+    tmp_dict = {}
+    for sensor in data["sensors"]:
+        board_name = sensor["board"]
+        tmp_dict.setdefault(board_name, []).append({})
+
+    for board_name, board_data in data["boards"].items():
+        if board_name not in tmp_dict:
+            continue
+        sensors.append(
+            {"topic": board_data["topic_sensors"], "sensors": tmp_dict[board_name]}
+        )
+    return sensors
 
 
 def _extra_joints(data: dict[str, Any], urdf_joints: set[str]) -> list[str]:
@@ -258,6 +336,36 @@ def render_ros2_control_xacro(
     return tpl.render(blocks=_ros2_control_blocks(data, board_ids, urdf_limits))
 
 
+def render_gazebo_xacro(
+    data: dict[str, Any],
+    board_ids: list[str],
+    urdf_limits: dict[str, tuple[float, float]],
+    env: jinja2.Environment | None = None,
+) -> str:
+    env = env or _jinja_env()
+    tpl = env.get_template("gazebo.xacro.j2")
+    return tpl.render(
+        blocks=_ros2_control_blocks(data, board_ids, urdf_limits),
+        cameras=_gazebo_xacro_cameras(data),
+        sensors=_gazebo_sensors(data),
+    )
+
+
+def render_gazebo_bridge(
+    data: dict[str, Any],
+    board_ids: list[str],
+    urdf_limits: dict[str, tuple[float, float]],
+    env: jinja2.Environment | None = None,
+) -> str:
+    env = env or _jinja_env()
+    tpl = env.get_template("gazebo_bridge.yaml.j2")
+    return tpl.render(
+        blocks=_ros2_control_blocks(data, board_ids, urdf_limits),
+        cameras=_gazebo_bridge_cameras(data),
+        sensors=_gazebo_sensors(data),
+    )
+
+
 def render_controllers_yaml(
     data: dict[str, Any],
     board_ids: list[str],
@@ -270,7 +378,9 @@ def render_controllers_yaml(
     update_rate = int(data["controller_manager"]["update_rate"])
     for bid in board_ids:
         ctrl = data["boards"][bid]["controller"]
-        joints = [a["urdf_joint"] for a in _actuators_for_board(data, bid, enabled_only=False)]
+        joints = [
+            a["urdf_joint"] for a in _actuators_for_board(data, bid, enabled_only=False)
+        ]
         controllers.append(
             {
                 "name": ctrl["name"],
@@ -349,6 +459,18 @@ def generate(
             encoding="utf-8",
         )
 
+    if targets & {"gazebo", "all"}:
+        xacro_out = output_dir / "gazebo.xacro"
+        bridge_out = output_dir / "gazebo_bridge.yaml"
+        xacro_out.write_text(
+            render_gazebo_xacro(data, ros2_control_boards, urdf_limits, env),
+            encoding="utf-8",
+        )
+        bridge_out.write_text(
+            render_gazebo_bridge(data, ros2_control_boards, urdf_limits, env),
+            encoding="utf-8",
+        )
+
 
 def generate_from_xacro_string_for_tests(
     data: dict[str, Any],
@@ -378,5 +500,7 @@ def generate_from_xacro_string_for_tests(
             data, board_ids, urdf_limits, env
         )
     if targets & {"controllers", "all"}:
-        out[names["controllers_yaml"]] = render_controllers_yaml(data, board_ids, extra, env)
+        out[names["controllers_yaml"]] = render_controllers_yaml(
+            data, board_ids, extra, env
+        )
     return out

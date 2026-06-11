@@ -38,9 +38,7 @@ def test_simulation_only_keeps_three_controllers_and_per_board_blocks():
     xacro = out["inmoov_ros2_control.xacro"]
     expected_boards = list(data["boards"].keys())
     assert xacro.count('<ros2_control name="') == len(expected_boards)
-    assert 'use_gazebo_sim' in xacro
     assert 'use_mock_hardware' in xacro
-    assert "gz_ros2_control/GazeboSimSystem" in xacro
     # Real and mock hardware now share the LucySystemHardware plugin so URDF
     # limit clamping is exercised on both paths; mock differs only in that
     # ``publish_actuators=false`` suppresses the micro-ROS actuator publisher.
