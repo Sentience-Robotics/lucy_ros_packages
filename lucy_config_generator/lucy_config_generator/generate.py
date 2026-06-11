@@ -211,21 +211,6 @@ def _ros2_control_blocks(
     return blocks
 
 
-def gazebo_camera_raw_topic(topic: str) -> str:
-    """
-    Raw-image topic a gz camera publishes / the bridge emits in sim.
-
-    gz-sim + ros_gz_bridge can only produce raw ``sensor_msgs/msg/Image``; the LCP
-    consumes JPEG ``CompressedImage`` on ``topic``. So the gz camera renders to this
-    raw topic and ``gazebo.launch.py`` republishes it (raw -> compressed) onto
-    ``topic``. For image_transport-style names (``.../compressed``) the raw topic is
-    the base (matches real-hardware layout); otherwise a ``/raw`` suffix is added.
-    """
-    suffix = "/compressed"
-    if topic.endswith(suffix):
-        return topic[: -len(suffix)]
-    return topic + "/raw"
-
 
 def _gazebo_camera_entry(camera: dict[str, Any]) -> dict[str, Any] | None:
     """One Gazebo-sim camera for bridge/republish, or None when not simulated."""
@@ -234,8 +219,8 @@ def _gazebo_camera_entry(camera: dict[str, Any]) -> dict[str, Any] | None:
     topic = camera.get("topic")
     if not isinstance(topic, str) or not topic.strip():
         return None
-    topic = topic.strip()
-    raw_topic = gazebo_camera_raw_topic(topic)
+    raw_topic = topic.strip()
+    compressed_topic = topic + "/compressed"
     external = bool(camera.get("external"))
     if external:
         gz_topic = camera.get("sim_gz_topic")
@@ -253,6 +238,7 @@ def _gazebo_camera_entry(camera: dict[str, Any]) -> dict[str, Any] | None:
         "name": camera["name"],
         "topic": topic,
         "raw_topic": raw_topic,
+        "compressed_topic": compressed_topic,
         "gz_topic": gz_topic,
         "message_type": camera["message_type"],
         "external": external,
