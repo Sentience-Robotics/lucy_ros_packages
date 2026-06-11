@@ -211,23 +211,70 @@ def _ros2_control_blocks(
     return blocks
 
 
-def _gazebo_cameras(data: dict[str, Any]) -> list[dict[str, Any]]:
+def gazebo_camera_raw_topic(topic: str) -> str:
+    """
+    Raw-image topic a gz camera publishes / the bridge emits in sim.
+
+    gz-sim + ros_gz_bridge can only produce raw ``sensor_msgs/msg/Image``; the LCP
+    consumes JPEG ``CompressedImage`` on ``topic``. So the gz camera renders to this
+    raw topic and ``gazebo.launch.py`` republishes it (raw -> compressed) onto
+    ``topic``. For image_transport-style names (``.../compressed``) the raw topic is
+    the base (matches real-hardware layout); otherwise a ``/raw`` suffix is added.
+    """
+    suffix = "/compressed"
+    if topic.endswith(suffix):
+        return topic[: -len(suffix)]
+    return topic + "/raw"
+
+
+def _gazebo_camera_entry(camera: dict[str, Any]) -> dict[str, Any] | None:
+    """One Gazebo-sim camera for bridge/republish, or None when not simulated."""
+    if not isinstance(camera, dict):
+        return None
+    topic = camera.get("topic")
+    if not isinstance(topic, str) or not topic.strip():
+        return None
+    topic = topic.strip()
+    raw_topic = gazebo_camera_raw_topic(topic)
+    external = bool(camera.get("external"))
+    if external:
+        gz_topic = camera.get("sim_gz_topic")
+        if not isinstance(gz_topic, str) or not gz_topic.strip():
+            return None
+        gz_topic = gz_topic.strip()
+        link = None
+    else:
+        link = camera.get("link")
+        if not isinstance(link, str) or not link.strip():
+            return None
+        gz_topic = raw_topic
+        link = link.strip()
+    return {
+        "name": camera["name"],
+        "topic": topic,
+        "raw_topic": raw_topic,
+        "gz_topic": gz_topic,
+        "message_type": camera["message_type"],
+        "external": external,
+        "link": link,
+    }
+
+
+def _gazebo_bridge_cameras(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Cameras bridged in sim (robot-mounted + external world cameras)."""
     cameras: list[dict[str, Any]] = []
     if "cameras" not in data:
         return cameras
     for camera in data["cameras"]:
-        if camera["external"]:
-            continue
-        cameras.append(
-            {
-                "name": camera["name"],
-                "topic": camera["topic"],
-                "message_type": camera["message_type"],
-                "external": camera["external"],
-                "link": camera["link"] if "link" in camera else "None",
-            }
-        )
+        entry = _gazebo_camera_entry(camera)
+        if entry is not None:
+            cameras.append(entry)
     return cameras
+
+
+def _gazebo_xacro_cameras(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Robot-mounted gz camera sensors only (excludes external/world cameras)."""
+    return [c for c in _gazebo_bridge_cameras(data) if not c["external"]]
 
 
 def _gazebo_sensors(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -309,7 +356,7 @@ def render_gazebo_xacro(
     tpl = env.get_template("gazebo.xacro.j2")
     return tpl.render(
         blocks=_ros2_control_blocks(data, board_ids, urdf_limits),
-        cameras=_gazebo_cameras(data),
+        cameras=_gazebo_xacro_cameras(data),
         sensors=_gazebo_sensors(data),
     )
 
@@ -324,7 +371,7 @@ def render_gazebo_bridge(
     tpl = env.get_template("gazebo_bridge.yaml.j2")
     return tpl.render(
         blocks=_ros2_control_blocks(data, board_ids, urdf_limits),
-        cameras=_gazebo_cameras(data),
+        cameras=_gazebo_bridge_cameras(data),
         sensors=_gazebo_sensors(data),
     )
 
