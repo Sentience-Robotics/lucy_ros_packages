@@ -19,7 +19,6 @@ from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Int32
 from std_srvs.srv import SetBool
-from camera_ros.srv import GetInt
 import cv2
 
 FPS = 10.0
@@ -97,8 +96,6 @@ class CameraPublisher(Node):
         # Create services for streaming control
         self.create_service(SetBool, 'start_streaming', self.start_streaming_callback)
         self.create_service(SetBool, 'stop_streaming', self.stop_streaming_callback)
-        self.create_service(GetInt, 'get_client_count', self.get_client_count)
-
         # Subscribe to client count for automatic control
         self.create_subscription(Int32, '/client_count', self.client_count_callback, 10)
 
@@ -106,10 +103,6 @@ class CameraPublisher(Node):
             f"Camera publisher node started using device {self.camera_device} "
             f"at {self.target_fps} FPS"
         )
-
-    def get_client_count(self, request, response):
-        response.value = self.client_count
-        return response
 
     def start_streaming_callback(self, request, response):
         """Service: Start streaming."""

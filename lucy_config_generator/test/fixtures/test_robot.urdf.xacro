@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<!-- Minimal URDF for generator extra_joints tests (#96). -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="test">
+  <link name="a"/>
+  <link name="b"/>
+  <joint name="left_a_joint" type="revolute">
+    <parent link="a"/>
+    <child link="b"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="1" lower="0" upper="1" velocity="1"/>
+  </joint>
+  <joint name="left_disabled_joint" type="revolute">
+    <parent link="a"/>
+    <child link="b"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="1" lower="0" upper="1" velocity="1"/>
+  </joint>
+  <joint name="right_a_joint" type="revolute">
+    <parent link="a"/>
+    <child link="b"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="1" lower="0" upper="1" velocity="1"/>
+  </joint>
+  <joint name="left_shoulder_y_link_joint" type="revolute">
+    <parent link="a"/>
+    <child link="b"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="1" lower="0" upper="1" velocity="1"/>
+  </joint>
+  <joint name="right_shoulder_y_link_joint" type="revolute">
+    <parent link="a"/>
+    <child link="b"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="1" lower="0" upper="1" velocity="1"/>
+  </joint>
+  <joint name="passive_extra_joint" type="revolute">
+    <parent link="a"/>
+    <child link="b"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="1" lower="0" upper="1" velocity="1"/>
+  </joint>
+</robot>

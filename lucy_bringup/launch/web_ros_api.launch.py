@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+# Copyright 2025 Sentience Robotics Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""
+Web control panel ROS API: rosbridge WebSocket + lucy_config_pipeline.
+
+Exposes config services and rosbridge for the Vite panel. Composed by
+``lucy.launch.py``.
+"""
+
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.substitutions import FindPackageShare
+
+
+def generate_launch_description():
+    robot_package_arg = DeclareLaunchArgument(
+        'robot_package',
+        default_value='thais_urdf',
+        description=(
+            'Robot package share used for hardware YAML paths '
+            'in lucy_config_pipeline'
+        ),
+    )
+    config_dir_arg = DeclareLaunchArgument(
+        'config_dir',
+        default_value='',
+        description=(
+            'Override hardware config directory for lucy_config_pipeline '
+            '(empty = <robot_package>/config/hardware)'
+        ),
+    )
+
+    rosbridge = ExecuteProcess(
+        cmd=[
+            'ros2',
+            'launch',
+            'rosbridge_server',
+            'rosbridge_websocket_launch.xml',
+            'default_call_service_timeout:=5.0',
+            'call_services_in_new_thread:=true',
+            'send_action_goals_in_new_thread:=true',
+        ],
+        output='screen',
+        shell=True,
+    )
+
+    config_pipeline_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('lucy_config_pipeline'),
+                'launch',
+                'config_pipeline.launch.py',
+            ])
+        ]),
+        launch_arguments=[
+            ('robot_package', LaunchConfiguration('robot_package')),
+            ('config_dir', LaunchConfiguration('config_dir')),
+        ],
+    )
+
+    return LaunchDescription([
+        robot_package_arg,
+        config_dir_arg,
+        rosbridge,
+        config_pipeline_launch,
+    ])

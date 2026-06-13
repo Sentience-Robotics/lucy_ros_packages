@@ -260,33 +260,6 @@ webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
 
     @patch('cv2.VideoCapture')
     @patch('subprocess.run')
-    def test_get_client_count_service(
-        self, mock_subprocess, mock_videocapture, rclpy_init_shutdown
-    ):
-        """Test get_client_count service."""
-        # Import here to ensure path is set up
-        from camera_ros.srv import GetInt
-        from camera_publisher import CameraPublisher
-
-        # Mock subprocess and VideoCapture
-        mock_subprocess.return_value.returncode = 0
-        mock_subprocess.return_value.stdout = (
-            "webcamproduct: usb-webcam:\n        /dev/video6\n"
-        )
-        mock_cap = MagicMock()
-        mock_cap.isOpened.return_value = True
-        mock_videocapture.return_value = mock_cap
-
-        node = CameraPublisher()
-        node.client_count = 5
-
-        request = GetInt.Request()
-        response = node.get_client_count(request, GetInt.Response())
-
-        assert response.value == 5
-
-    @patch('cv2.VideoCapture')
-    @patch('subprocess.run')
     def test_topic_name_ext_camera(
         self, mock_subprocess, mock_videocapture, rclpy_init_shutdown
     ):

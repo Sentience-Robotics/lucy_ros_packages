@@ -3,7 +3,7 @@
 <package format="3">
   <name>lucy_bringup</name>
   <version>1.0.0</version>
-  <description>Launch files and scripts for bringing up the Lucy robot system</description>
+  <description>Launch files for Lucy bringup: lucy.launch.py (Jetson + optional RViz/Gazebo), web_ros_api (rosbridge + lucy_config_pipeline).</description>
   
   <maintainer email="contact@sentience-robotics.fr">Sentience Robotics Team</maintainer>
   <license>GPL-3.0</license>
@@ -16,6 +16,8 @@
   <exec_depend>camera_ros</exec_depend>
   <exec_depend>audio_common</exec_depend>
   <exec_depend>realsense2_camera</exec_depend>
+  <exec_depend>lucy_config_pipeline</exec_depend>
+  <exec_depend>thais_urdf</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 

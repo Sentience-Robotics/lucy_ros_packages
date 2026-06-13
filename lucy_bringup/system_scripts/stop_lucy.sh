@@ -3,6 +3,9 @@
 # Stop script for Lucy Robot System
 
 SESSION_NAME="lucy"
+_SCRIPT_DIR="${0:A:h}"
+source "${_SCRIPT_DIR}/lucy_workspace.zsh.inc"
+WORKSPACE="${LUCY_WORKSPACE}"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -24,7 +27,7 @@ fi
 echo -e "${BLUE}📋 Gracefully stopping processes...${NC}"
 
 # Source ROS2 workspace for service calls
-source $HOME/lucy_ws/install/setup.zsh 2>/dev/null || true
+source "${WORKSPACE}/install/setup.zsh" 2>/dev/null || true
 
 # Stop camera streaming via service (with timeout)
 echo -e "${BLUE}  → Stopping camera streaming...${NC}"
@@ -35,8 +38,11 @@ else
 fi
 sleep 1
 
-# Stop ROS nodes (pane 0)
+# Stop ROS nodes (pane 0): ros2 launch often needs a second SIGINT to tear down nested
+# launches (e.g. rosbridge spawned via ExecuteProcess/shell).
 echo -e "${BLUE}  → Stopping ROS2 nodes...${NC}"
+tmux send-keys -t $SESSION_NAME:0.0 C-c 2>/dev/null || true
+sleep 3
 tmux send-keys -t $SESSION_NAME:0.0 C-c 2>/dev/null || true
 sleep 2
 
@@ -45,9 +51,19 @@ echo -e "${BLUE}  → Stopping web interface...${NC}"
 tmux send-keys -t $SESSION_NAME:0.1 C-c 2>/dev/null || true
 sleep 1
 
-# Kill the tmux session
+# Kill the tmux session (sends SIGHUP to remaining pane processes)
 echo -e "${BLUE}  → Terminating tmux session...${NC}"
 tmux kill-session -t $SESSION_NAME 2>/dev/null || true
+sleep 1
+
+# Fallback: processes launched under shell wrappers sometimes survive tmux teardown.
+echo -e "${BLUE}  → Cleaning up orphaned Lucy launch helpers (if any)...${NC}"
+pkill -TERM -f rosbridge_websocket 2>/dev/null || true
+pkill -TERM -f rosbridge_websocket_launch 2>/dev/null || true
+pkill -TERM -f micro_ros_agent 2>/dev/null || true
+sleep 2
+pkill -KILL -f rosbridge_websocket 2>/dev/null || true
+pkill -KILL -f rosbridge_websocket_launch 2>/dev/null || true
 
 echo ""
 echo -e "${GREEN}========================================${NC}"

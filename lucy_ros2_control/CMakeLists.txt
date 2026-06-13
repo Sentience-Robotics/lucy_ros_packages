@@ -24,12 +24,13 @@ endforeach()
 add_library(
   lucy_ros2_control
   SHARED
-  hardware/lucy_system.cpp
+  src/lucy_system.cpp
+  src/joint_config.cpp
 )
 
 target_compile_features(lucy_ros2_control PUBLIC cxx_std_17)
 target_include_directories(lucy_ros2_control PUBLIC
-$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/hardware/include>
+$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/include>
 $<INSTALL_INTERFACE:include/lucy_ros2_control>
 )
 ament_target_dependencies(
@@ -43,22 +44,17 @@ pluginlib_export_plugin_description_file(hardware_interface lucy_ros2_control.xm
 
 # Installing
 install(
-  DIRECTORY hardware/include/
+  DIRECTORY src/include/
   DESTINATION include/lucy_ros2_control
-)
-
-install(
-  DIRECTORY config launch
-  DESTINATION share/${PROJECT_NAME}/
 )
 
 # install(
 #   DIRECTORY description/launch description/ros2_control description/urdf
-#   DESTINATION share/ros2_control_demo_example_2
+#   DESTINATION share/lucy_ros2_control
 # )
 # install(
 #   DIRECTORY bringup/launch bringup/config
-#   DESTINATION share/ros2_control_demo_example_2
+#   DESTINATION share/lucy_ros2_control
 # )
 install(TARGETS lucy_ros2_control
   EXPORT export_lucy_ros2_control
@@ -68,17 +64,30 @@ install(TARGETS lucy_ros2_control
 )
 
 if(BUILD_TESTING)
-  # Apache-2.0 headers in hardware/*.cpp vs GPL-3.0 in package.xml; cpplint noise on vendored style.
+  # cpplint excluded: noise on the inherited ros2_control style; copyright lint
+  # expects the standard GPLv3 header block (matches lucy_bringup / package.xml).
   set(AMENT_LINT_AUTO_EXCLUDE
-    ament_cmake_copyright
     ament_cmake_cpplint
   )
-  find_package(ament_cmake_pytest REQUIRED)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
-  ament_add_pytest_test(test_controllers_yaml test/test_controllers_yaml.py
-    TIMEOUT 60
+
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_position_limit_clamp test/test_position_limit_clamp.cpp)
+  target_include_directories(test_position_limit_clamp PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/include
   )
+
+  # Pure on_init helpers: compile the module straight into the test (no ROS node
+  # needed); depends on hardware_interface for ComponentInfo / lexical_casts.
+  ament_add_gtest(test_joint_config
+    test/test_joint_config.cpp
+    src/joint_config.cpp
+  )
+  target_include_directories(test_joint_config PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/include
+  )
+  ament_target_dependencies(test_joint_config hardware_interface)
 endif()
 
 ament_package()

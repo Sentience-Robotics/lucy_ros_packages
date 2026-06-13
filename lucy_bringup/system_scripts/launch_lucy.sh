@@ -5,8 +5,10 @@
 set -e  # Exit on error
 
 SESSION_NAME="lucy"
-WORKSPACE="$HOME/lucy_ws"
-WEB_DIR="$HOME/web_control_panel"
+_SCRIPT_DIR="${0:A:h}"
+source "${_SCRIPT_DIR}/lucy_workspace.zsh.inc"
+WORKSPACE="${LUCY_WORKSPACE}"
+WEB_DIR="${LUCY_CONTROL_PANEL_DIR}"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -51,7 +53,7 @@ fi
 
 # Check if web directory exists
 if [ ! -d "$WEB_DIR" ]; then
-    echo -e "${YELLOW}⚠️  Web directory not found: $WEB_DIR${NC}"
+    echo -e "${YELLOW}⚠️  Control panel dir not found: $WEB_DIR${NC}"
     echo "Web interface will not be started."
     WEB_AVAILABLE=false
 else
@@ -83,7 +85,7 @@ tmux resize-pane -t $SESSION_NAME:0.1 -x 20
 # ============================================
 echo -e "${BLUE}🤖 Setting up ROS2 nodes pane...${NC}"
 tmux send-keys -t $SESSION_NAME:0.0 "source $WORKSPACE/install/setup.zsh" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "ros2 launch lucy_bringup lucy.launch.py" C-m
+tmux send-keys -t $SESSION_NAME:0.0 "ros2 launch lucy_bringup lucy.launch.py real:=true" C-m
 
 # ============================================
 # PANE 1 (Bottom-Left): Web Interface
