@@ -24,7 +24,7 @@ class CameraStreamController(Node):
     """
     Controller node that manages camera streaming based on client count.
 
-    Subscribes to /client_count topic and uses services to start/stop
+    Subscribes to /lucy/client_count topic and uses services to start/stop
     camera streaming when clients connect/disconnect.
     """
 
@@ -33,7 +33,7 @@ class CameraStreamController(Node):
 
         # Subscribe to client count
         self.create_subscription(
-            Int32, '/client_count', self.client_count_callback, 10
+            Int32, '/lucy/client_count', self.client_count_callback, 10
         )
 
         # Service clients for streaming control

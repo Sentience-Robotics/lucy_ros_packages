@@ -10,44 +10,46 @@ The recommended way to interface with Lucy is to use the `lucy_cli.ros_interface
 
 ## 1. Core Concepts
 
-### Control Arbitration (Taking and Releasing Control)
+### Presence and Control Arbitration (the client registry)
 
-To prevent multiple users from sending conflicting commands simultaneously, Lucy uses a simple control arbitration system.
-
-- **Topic:** `/control_panel_active_client`
-- **Message Type:** `std_msgs/msg/String`
-- **QoS:** Latching (`TRANSIENT_LOCAL` durability)
-
-**Protocol:**
-1.  **To Take Control:** Publish your unique client ID to this topic.
-2.  **To Release Control:** Publish an empty string (`""`) to this topic.
-3.  **To Monitor Control:** Subscribe to this topic. If you receive a message containing a client ID that is *not* your own, your application should enter a "read-only" mode and disable its own command publishing features.
+Presence (the connected-client count) and control arbitration are owned by a single transport-agnostic node, `lucy_client_registry`.
+Every interface — the web control panel over rosbridge, the native CLI directly over DDS, your own script — participates in exactly the same way, and **nothing here depends on a rosbridge connection**.
+The registry is the only writer of the count and the active controller; clients register by heartbeat and change control through a service.
 
 A good client ID is one that is both unique and descriptive, for example: `my_app_1678886400_a3f7`.
 
+**Registering presence (heartbeat).** Pulse your client ID on `/lucy/client_heartbeat` (`std_msgs/msg/String`, volatile) roughly once per second.
+The registry counts you as connected while your heartbeats keep arriving and prunes you automatically about three seconds after they stop (three missed beats at the 1 Hz cadence) — so a crash or a closed tab is handled for free, with no explicit "disconnect" step.
+
 ```python
-# From lucy_cli/ros_interface.py
-
-import time
-import random
-
 # A unique identifier for this specific client instance.
 CLIENT_ID = f"my_app_{int(time.time())}_{random.randint(1000, 9999)}"
 
 # ... inside your ROS Node class ...
-# self.control_publisher = self.create_publisher(String, '/control_panel_active_client', qos_profile=LATCHING_QOS)
+# self.heartbeat_publisher = self.create_publisher(String, '/lucy/client_heartbeat', qos_profile=VOLATILE_QOS)
+# self.create_timer(1.0, lambda: self.heartbeat_publisher.publish(String(data=CLIENT_ID)))
+```
 
+**Taking and releasing control.** Call the `/lucy/control` service (`lucy_msgs/srv/ClientControl`) with your client ID and `acquire=True` to take control, or `acquire=False` to release it.
+Control is preemptive (the latest acquirer wins); if the controlling client's heartbeat lapses, the registry releases control automatically so the robot is never stuck owned by a dead client.
+
+**Monitoring control.** Subscribe to `/lucy/active_client` (`std_msgs/msg/String`, latching).
+If you receive a non-empty client ID that is *not* your own, enter a "read-only" mode and disable your command publishing.
+
+```python
 def take_control(self):
-    """Publishes this client's ID to request control of the robot."""
-    self.get_logger().info("Requesting control...")
-    msg = String(data=CLIENT_ID)
-    self.control_publisher.publish(msg)
+    self._send_control_request(acquire=True)
 
 def release_control(self):
-    """Publishes an empty string to release control of the robot."""
-    self.get_logger().info("Releasing control...")
-    msg = String(data="")
-    self.control_publisher.publish(msg)
+    self._send_control_request(acquire=False)
+
+def _send_control_request(self, acquire: bool):
+    """The resulting controller comes back on /lucy/active_client."""
+    if not self._control_client.wait_for_service(timeout_sec=2.0):
+        self.get_logger().warn("'/lucy/control' service not available.")
+        return
+    req = ClientControl.Request(client_id=CLIENT_ID, acquire=acquire)
+    self._control_client.call_async(req)  # fire-and-forget
 ```
 
 ### Dynamic Hardware Configuration
@@ -141,24 +143,25 @@ def publish_joint_trajectory(self, controller_topic: str, joint_names: list[str]
 
 ### Monitoring Connected Clients
 
-You can monitor how many clients are connected to the control system. This is useful for diagnostics and understanding system load.
+You can monitor how many clients are connected to the control system.
+This is the universal count maintained by the registry from live heartbeats — it includes *every* interface (web and native alike), not just rosbridge WebSocket clients.
 
-- **Topic:** `/client_count`
+- **Topic:** `/lucy/client_count`
 - **Message Type:** `std_msgs/msg/Int32`
 - **QoS:** Latching (`TRANSIENT_LOCAL` durability)
 
-- **Service:** `/get_client_count`
+- **Service:** `/lucy/get_client_count`
 - **Service Type:** `lucy_msgs/srv/GetInt`
 
 **Protocol:**
-1.  **On Startup:** Call the `/get_client_count` service to get the number of clients already connected.
-2.  **Continuously:** Subscribe to the `/client_count` topic to receive live updates whenever a client connects or disconnects.
+1.  **On Startup:** Call the `/lucy/get_client_count` service to get the number of clients already connected.
+2.  **Continuously:** Subscribe to the `/lucy/client_count` topic to receive live updates whenever a client connects or disconnects.
 
 ```python
 # From lucy_cli/ros_interface.py
 
 # In __init__:
-# self.create_subscription(Int32, '/client_count', self._client_count_callback, qos_profile=LATCHING_QOS)
+# self.create_subscription(Int32, '/lucy/client_count', self._client_count_callback, qos_profile=LATCHING_QOS)
 
 def _client_count_callback(self, msg: Int32):
     """Handles incoming messages on the client count topic."""
@@ -168,7 +171,7 @@ def _client_count_callback(self, msg: Int32):
 # --- In your startup logic ---
 def get_initial_client_count(self) -> int | None:
     """
-    Synchronously calls the /get_client_count service.
+    Synchronously calls the /lucy/get_client_count service.
     """
     # ... (implementation similar to get_hardware_config_yaml) ...
 ```
@@ -181,10 +184,12 @@ def get_initial_client_count(self) -> int | None:
 
 | Endpoint | Type | Message/Service Type | QoS Durability | Purpose |
 |---|---|---|---|---|
-| `/control_panel_active_client` | Topic | `std_msgs/msg/String` | `TRANSIENT_LOCAL` | Take, release, and monitor control. |
-| `/client_count` | Topic | `std_msgs/msg/Int32` | `TRANSIENT_LOCAL` | Get live updates on the number of connected clients. |
+| `/lucy/client_heartbeat` | Topic | `std_msgs/msg/String` | `VOLATILE` | Pulse your client ID ~1 Hz to register as connected. |
+| `/lucy/active_client` | Topic | `std_msgs/msg/String` | `TRANSIENT_LOCAL` | Monitor which client currently holds control. |
+| `/lucy/client_count` | Topic | `std_msgs/msg/Int32` | `TRANSIENT_LOCAL` | Get live updates on the number of connected clients. |
+| `/lucy/control` | Service | `lucy_msgs/srv/ClientControl` | N/A | Take or release control (`acquire` flag). |
+| `/lucy/get_client_count` | Service | `lucy_msgs/srv/GetInt` | N/A | Get the initial number of connected clients on startup. |
 | `/config/get` | Service | `lucy_msgs/srv/GetConfig` | N/A | Fetch the active robot hardware configuration (YAML). |
-| `/get_client_count` | Service | `lucy_msgs/srv/GetInt` | N/A | Get the initial number of connected clients on startup. |
 | `/{controller_name}/joint_trajectory` | Topic | `trajectory_msgs/msg/JointTrajectory` | `VOLATILE` | Send joint position commands to a specific controller. |
 | `/joint_states` | Topic | `sensor_msgs/msg/JointState` | `VOLATILE` | Read the actual, measured state of all robot joints. |
 
