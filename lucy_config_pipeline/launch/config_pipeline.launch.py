@@ -20,4 +20,11 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
-    return LaunchDescription([robot_pkg_arg, config_dir_arg, node])
+    # Separate process so a registry fault can never take down config services.
+    registry_node = Node(
+        package="lucy_config_pipeline",
+        executable="client_registry_node",
+        output="screen",
+    )
+
+    return LaunchDescription([robot_pkg_arg, config_dir_arg, node, registry_node])

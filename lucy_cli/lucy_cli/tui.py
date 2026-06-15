@@ -20,6 +20,20 @@ import time
 # across screen refreshes in auto-refresh mode.
 INPUT_BUFFER = ""
 
+# Self-pipe that lets a background thread wake get_user_input() from its select() to force a redraw.
+# Only effective on POSIX, where select() watches it.
+_wake_r, _wake_w = os.pipe()
+
+def notify_event():
+    """Wake a blocked get_user_input() so the TUI can redraw on a state change.
+
+    Safe to call from a background (ROS executor) thread.
+    """
+    try:
+        os.write(_wake_w, b'x')
+    except OSError:
+        pass
+
 def clear_screen():
     """Clears the terminal screen using ANSI escape codes for a flicker-free update."""
     if os.name == 'posix':
@@ -60,7 +74,17 @@ def get_user_input(prompt: str, timeout: float = 1.0) -> str | None:
     old_settings = termios.tcgetattr(fd)
     try:
         tty.setcbreak(fd)
-        if select.select([sys.stdin], [], [], timeout)[0]:
+        ready = select.select([sys.stdin, _wake_r], [], [], timeout)[0]
+        if _wake_r in ready:
+            # A background state change asked for a redraw. Drain the pipe.
+            try:
+                os.read(_wake_r, 65536)
+            except OSError:
+                pass
+            # If the user wasn't also typing, redraw without touching the buffer.
+            if sys.stdin not in ready:
+                return None
+        if sys.stdin in ready:
             while True:
                 char = sys.stdin.read(1)
                 if char == '\n' or char == '\r': # Enter pressed
@@ -102,11 +126,27 @@ def display_help_screen():
     print("  'q'         - Quit the application.")
     print("\n[Main Menu]")
     print("  <number>  - Select an actuator group to view and edit its joints.")
-    print("  't'         - (When available) Forcibly take control from another client.")
+    print("  'c'         - Toggle control: take control of the robot, or release it if you already hold it.")
     print("\n[Joint Menu]")
     print("  <number>  - Select a joint to modify its angle.")
     print("  'b'         - Go back to the main menu.")
     print("\nPress Enter to return...")
+    input()
+
+def display_control_taken_popup(controller_id: str):
+    """Full-screen notice shown when another client takes control from us.
+
+    Blocks until the user acknowledges, mirroring the front-end popup behaviour.
+    """
+    global INPUT_BUFFER
+    INPUT_BUFFER = ""  # Discard anything typed before the takeover.
+    clear_screen()
+    print("=" * 50)
+    print("  CONTROL TAKEN")
+    print("=" * 50)
+    print(f"\n  '{controller_id}' has taken control of the robot.")
+    print("  You are now in read-only mode.\n")
+    print("  Press ENTER to continue...")
     input()
 
 def display_main_menu(state: dict):
@@ -118,15 +158,21 @@ def display_main_menu(state: dict):
                'client_count', 'autorefresh', 'has_control', 'active_controller',
                and 'actuator_groups'.
     """
-    print("--- Robot Actuator TUI ---")
-    print(f"Control Panel Connection Count: {state.get('client_count', 'N/A')}")
+    print("--- Robot Actuator TUI ---\n")
+    print(f"Connected Clients: {state.get('client_count', 'N/A')}")
     if state.get('autorefresh'):
         print("[Auto-Refresh: ON]")
     
-    if not state.get('has_control') and state.get('active_controller'):
-        print(f"!! CONTROLLED BY: {state['active_controller']} !!\n")
-        print("Press 't' to take control.")
-    
+    if state.get('has_control'):
+        print(">> YOU ARE IN CONTROL of the robot <<")
+        print("Type 'c' to release control.")
+    else:
+        if state.get('active_controller'):
+            print(f"!! CONTROLLED BY: {state['active_controller']} !!")
+        else:
+            print("No client has control.")
+        print("Type 'c' to take control.")
+
     print("\nSelect an actuator group:")
     for i, name in enumerate(state.get('actuator_groups', [])):
         print(f"{i+1}. {name}")
@@ -141,7 +187,9 @@ def display_joint_menu(state: dict, group_name: str):
         group_name: The name of the actuator group being displayed.
     """
     print(f"--- {group_name} ---")
-    if not state.get('has_control'):
+    if state.get('has_control'):
+        print(">> YOU ARE IN CONTROL of the robot <<\n")
+    else:
         print(f"!! READ-ONLY (Controlled by {state.get('active_controller')}) !!\n")
 
     joints = state.get('actuators', {}).get(group_name, {}).get('joints', [])

@@ -29,11 +29,10 @@ class CameraPublisher(Node):
     """
     Zero-copy MJPEG camera publisher using GStreamer pipeline.
 
-    Publishes compressed JPEG images from camera with zero CPU transcoding
-    overhead. Supports service-based streaming control
-    (start_streaming/stop_streaming). Automatically activates when clients
-    are detected and pauses when no clients are present. Listens to
-    /client_count topic for automatic activation/deactivation.
+    Publishes compressed JPEG images from camera with zero CPU transcoding overhead.
+    Supports service-based streaming control (start_streaming/stop_streaming).
+    Automatically activates when clients are detected and pauses when no clients are present.
+    Listens to /lucy/client_count topic for automatic activation/deactivation.
     """
 
     def __init__(self):
@@ -97,7 +96,7 @@ class CameraPublisher(Node):
         self.create_service(SetBool, 'start_streaming', self.start_streaming_callback)
         self.create_service(SetBool, 'stop_streaming', self.stop_streaming_callback)
         # Subscribe to client count for automatic control
-        self.create_subscription(Int32, '/client_count', self.client_count_callback, 10)
+        self.create_subscription(Int32, '/lucy/client_count', self.client_count_callback, 10)
 
         self.get_logger().info(
             f"Camera publisher node started using device {self.camera_device} "
