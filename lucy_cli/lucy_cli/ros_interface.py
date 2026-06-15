@@ -50,15 +50,30 @@ from rclpy.duration import Duration
 from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy, QoSDurabilityPolicy
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from std_msgs.msg import String, Int32
-from lucy_msgs.srv import GetConfig, GetInt
+from sensor_msgs.msg import JointState
+from lucy_msgs.srv import GetConfig, GetInt, ClientControl
 
 # --- Unique Client ID ---
 # A unique identifier for this specific client instance.
 CLIENT_ID = f"cli_{int(time.time())}_{random.randint(1000, 9999)}"
 
-# --- Topic Names ---
-CONTROL_MODE_TOPIC = '/control_panel_active_client'
-CLIENT_COUNT_TOPIC = '/client_count'
+# --- Topic & Service Names ---
+# Presence and control go through the lucy_client_registry node; see lucy_cli/developer.md.
+HEARTBEAT_TOPIC = '/lucy/client_heartbeat'
+CLIENT_COUNT_TOPIC = '/lucy/client_count'
+ACTIVE_CLIENT_TOPIC = '/lucy/active_client'
+# Actual, measured joint positions published by ros2_control (URDF radians).
+JOINT_STATES_TOPIC = '/joint_states'
+GET_CLIENT_COUNT_SERVICE = '/lucy/get_client_count'
+CONTROL_SERVICE = '/lucy/control'
+
+# How often we pulse our heartbeat so the registry keeps counting us as connected.
+HEARTBEAT_PERIOD_S = 1.0
+
+# Joint moves smaller than this (radians) don't count as a change.
+JOINT_STATE_EPSILON_RAD = 0.001
+# Store /joint_states at full rate; drain changes to listeners at this period.
+JOINT_STATE_DRAIN_PERIOD_S = 1.0
 
 # --- QoS Profiles ---
 # For state topics that should be "latched" (i.e., the last published message
@@ -100,26 +115,44 @@ class LucyROSInterface(Node):
         self._control_lock = threading.Lock()
         self._is_shutting_down = False
 
+        # Latest measured joint positions in URDF radians, keyed by joint name.
+        # Written at full rate by the subscription, read by the drain timer / UI.
+        self._joint_positions_rad = {}
+        # Positions at the last drain; changes are measured against this so slow, sub-epsilon-per-message motion still accumulates past the threshold.
+        self._notify_baseline_rad = {}
+        self._joint_state_lock = threading.Lock()
+
         # --- Callbacks ---
         # These sets will hold functions to be called when state changes.
         self._on_control_change_callbacks = set()
         self._on_client_count_change_callbacks = set()
+        self._on_joint_state_change_callbacks = set()
 
         # --- Publishers ---
-        self.control_publisher = self.create_publisher(
-            String, CONTROL_MODE_TOPIC, qos_profile=LATCHING_QOS)
+        self.heartbeat_publisher = self.create_publisher(
+            String, HEARTBEAT_TOPIC, qos_profile=VOLATILE_QOS)
         # Joint publishers are created dynamically after config is loaded.
         self._joint_publishers = {}
 
         # --- Subscribers ---
         self.create_subscription(
-            String, CONTROL_MODE_TOPIC, self._control_callback, qos_profile=LATCHING_QOS)
+            String, ACTIVE_CLIENT_TOPIC, self._control_callback, qos_profile=LATCHING_QOS)
         self.create_subscription(
             Int32, CLIENT_COUNT_TOPIC, self._client_count_callback, qos_profile=LATCHING_QOS)
+        self.create_subscription(
+            JointState, JOINT_STATES_TOPIC, self._joint_state_callback, qos_profile=VOLATILE_QOS)
 
         # --- Service Clients ---
         self._get_config_client = self.create_client(GetConfig, '/config/get')
-        self._get_count_client = self.create_client(GetInt, '/get_client_count')
+        self._get_count_client = self.create_client(GetInt, GET_CLIENT_COUNT_SERVICE)
+        self._control_client = self.create_client(ClientControl, CONTROL_SERVICE)
+
+        # --- Heartbeat ---
+        self._heartbeat_timer = self.create_timer(HEARTBEAT_PERIOD_S, self._publish_heartbeat)
+
+        # --- Joint-state drain ---
+        self._joint_state_timer = self.create_timer(
+            JOINT_STATE_DRAIN_PERIOD_S, self._drain_joint_state_changes)
 
         # --- Executor ---
         # Spin the node in a background thread to handle callbacks automatically.
@@ -129,8 +162,8 @@ class LucyROSInterface(Node):
         self._spin_thread.start()
 
         self.get_logger().info(f"LucyROSInterface started with Client ID: {CLIENT_ID}")
-        # Take control on startup
-        self.take_control()
+        # Register as connected. Control is opt-in (the user takes it from the TUI).
+        self._publish_heartbeat()
 
     # --- Public Methods: Callbacks ---
 
@@ -153,7 +186,23 @@ class LucyROSInterface(Node):
         """
         self._on_client_count_change_callbacks.add(callback)
 
+    def register_on_joint_state_change(self, callback):
+        """
+        Register a function to be called when measured joint positions change.
+
+        The callback receives no arguments; call get_joint_positions_rad() to
+        read the latest state. Fired only when at least one joint moved beyond
+        JOINT_STATE_EPSILON_RAD, so an idle robot doesn't spam callbacks.
+        """
+        self._on_joint_state_change_callbacks.add(callback)
+
     # --- Public Methods: State & Commands ---
+
+    def get_joint_positions_rad(self) -> dict:
+        """Returns a snapshot of the latest measured joint positions (radians),
+        keyed by joint name."""
+        with self._joint_state_lock:
+            return dict(self._joint_positions_rad)
 
     @property
     def client_id(self) -> str:
@@ -165,25 +214,45 @@ class LucyROSInterface(Node):
         with self._control_lock:
             return self._has_control
 
+    @property
+    def client_count(self) -> int:
+        """Returns the most recently known number of connected clients."""
+        return self._client_count
+
+    @property
+    def active_controller(self) -> str:
+        """Returns the id of the client currently in control, or '' if none."""
+        return self._active_controller_id
+
     def take_control(self):
-        """Publishes this client's ID to request control of the robot."""
+        """Requests control of the robot from the client registry."""
         if self._is_shutting_down: return
         self.get_logger().info("Requesting control...")
-        msg = String(data=CLIENT_ID)
-        try:
-            self.control_publisher.publish(msg)
-        except Exception:
-            pass # Ignore errors if already shutting down
+        self._send_control_request(acquire=True)
 
     def release_control(self):
-        """Publishes an empty string to release control of the robot."""
+        """Releases control of the robot via the client registry."""
         if self._is_shutting_down: return
         self.get_logger().info("Releasing control...")
-        msg = String(data="")
+        self._send_control_request(acquire=False)
+
+    def _send_control_request(self, acquire: bool):
+        # The resulting controller comes back on ACTIVE_CLIENT_TOPIC.
         try:
-            self.control_publisher.publish(msg)
+            if not self._control_client.wait_for_service(timeout_sec=2.0):
+                self.get_logger().warn(f"'{CONTROL_SERVICE}' service not available.")
+                return
+            req = ClientControl.Request(client_id=CLIENT_ID, acquire=acquire)
+            self._control_client.call_async(req)
+        except Exception as e:
+            self.get_logger().error(f"Control request failed: {e}")
+
+    def _publish_heartbeat(self):
+        if self._is_shutting_down: return
+        try:
+            self.heartbeat_publisher.publish(String(data=CLIENT_ID))
         except Exception:
-            pass # Ignore errors if already shutting down
+            pass
 
     def publish_joint_trajectory(self, controller_topic: str, joint_names: list[str], positions_rad: list[float]):
         """
@@ -253,7 +322,7 @@ class LucyROSInterface(Node):
 
     def get_initial_client_count(self) -> int | None:
         """
-        Synchronously calls the /get_client_count service.
+        Synchronously calls the registry's get-client-count service.
 
         This is a blocking call and should be used during application startup.
 
@@ -262,7 +331,7 @@ class LucyROSInterface(Node):
         """
         try:
             if not self._get_count_client.wait_for_service(timeout_sec=3.0):
-                self.get_logger().warn("'/get_client_count' service not available.")
+                self.get_logger().warn(f"'{GET_CLIENT_COUNT_SERVICE}' service not available.")
                 return None
             req = GetInt.Request()
             future = self._get_count_client.call_async(req)
@@ -316,6 +385,33 @@ class LucyROSInterface(Node):
             for cb in self._on_control_change_callbacks:
                 cb(new_controller_id)
 
+    def _joint_state_callback(self, msg: JointState):
+        """Stores the latest measured joint positions at the full ROS rate."""
+        with self._joint_state_lock:
+            for name, position in zip(msg.name, msg.position):
+                self._joint_positions_rad[name] = position
+
+    def _drain_joint_state_changes(self):
+        """Notifies listeners at most once per drain, and only when a joint has
+        moved past the threshold since the last drain. Comparing against the
+        last-drained baseline (not the previous sample) lets slow motion
+        accumulate past it; an idle robot stays below and produces no redraws.
+        """
+        if self._is_shutting_down:
+            return
+        changed = False
+        with self._joint_state_lock:
+            for name, position in self._joint_positions_rad.items():
+                baseline = self._notify_baseline_rad.get(name)
+                if baseline is None or abs(baseline - position) > JOINT_STATE_EPSILON_RAD:
+                    changed = True
+                    break
+            if changed:
+                self._notify_baseline_rad.update(self._joint_positions_rad)
+        if changed:
+            for cb in self._on_joint_state_change_callbacks:
+                cb()
+
     def _client_count_callback(self, msg: Int32):
         """Handles incoming messages on the client count topic."""
         with self._control_lock:
@@ -332,12 +428,13 @@ class LucyROSInterface(Node):
     def shutdown(self):
         """Gracefully shuts down the node and its background thread."""
         if self._is_shutting_down: return
-        self._is_shutting_down = True
-        
+
         self.get_logger().info("Shutting down LucyROSInterface.")
+        # Release before flipping the guard, else release_control() short-circuits.
         self.release_control()
-        # Give a moment for the release message to be sent
-        time.sleep(0.1)
+        self._is_shutting_down = True
+        self._heartbeat_timer.cancel()
+        self._joint_state_timer.cancel()
+        time.sleep(0.1)  # let the release request go out
         self._executor.shutdown()
-        # self._spin_thread.join() # This can hang, shutdown is enough
         self.destroy_node()

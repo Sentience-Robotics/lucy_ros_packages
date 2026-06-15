@@ -15,9 +15,9 @@ def rclpy_init_shutdown():
 
 
 class TestConfigServicesNode:
-    def test_get_client_count_service(self, rclpy_init_shutdown, tmp_path: Path):
-        """Test /get_client_count service returns the current client count."""
-        from lucy_msgs.srv import GetInt
+    def test_get_config_missing_returns_failure(self, rclpy_init_shutdown, tmp_path: Path):
+        """Unknown/active config on an empty store fails gracefully."""
+        from lucy_msgs.srv import GetConfig
 
         node = ConfigServicesNode(
             robot_package="test_pkg",
@@ -26,9 +26,9 @@ class TestConfigServicesNode:
             base_path=tmp_path,
             controller_config=Path("/dev/null"),
         )
-        node._client_count = 5
-
-        response = node._on_get_client_count(GetInt.Request(), GetInt.Response())
-
-        assert response.value == 5
-        node.destroy_node()
+        try:
+            response = node._on_get_config(GetConfig.Request(), GetConfig.Response())
+            assert response.success is False
+            assert response.robot_package == "test_pkg"
+        finally:
+            node.destroy_node()

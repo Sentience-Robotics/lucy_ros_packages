@@ -21,6 +21,7 @@ setup(
     entry_points={
         "console_scripts": [
             "config_pipeline_node = src.main:main",
+            "client_registry_node = src.services.client_registry_node:main",
         ],
     },
 )
