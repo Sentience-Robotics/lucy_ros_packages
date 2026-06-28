@@ -359,9 +359,6 @@ class LucyROSInterface(Node):
                 self.get_logger().error(f"Failed to get active config: {response.message if response else 'timeout'}")
                 return None
             self.get_logger().info("Successfully fetched active hardware configuration.")
-            print("Printing config yaml:")
-            print(response.config_yaml)
-            print("End of config yaml.  -------------------------")
             return response.config_yaml
         except Exception as e:
             self.get_logger().error(f"Exception in get_hardware_config_yaml: {e}")
