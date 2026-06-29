@@ -42,6 +42,51 @@ def clear_screen():
     else:
         os.system('cls')
 
+def render_sensor_graph(history, height: int = 12, width: int = 60) -> str:
+    """Renders a list of recent sensor values as an ASCII line graph.
+
+    The vertical axis is scaled to the min/max of the visible window, with
+    the max value labeled on the top row and the min value on the bottom row.
+    """
+    data = list(history)[-width:]
+    values = [v for v in data if v is not None]
+    if not values:
+        return "No data yet."
+
+    vmax = max(values)
+    vmin = min(values)
+    cols = width
+    pad = width - len(data)
+
+    rows_idx = [None] * pad
+    for v in data:
+        if v is None:
+            rows_idx.append(None)
+            continue
+        if vmax == vmin or height <= 1:
+            rows_idx.append(height - 1)
+        else:
+            frac = (v - vmin) / (vmax - vmin)
+            rows_idx.append(round((1 - frac) * (height - 1)))
+
+    grid = [[' '] * cols for _ in range(height)]
+    for col, row in enumerate(rows_idx):
+        if row is not None:
+            grid[row][col] = '*'
+
+    label_width = 9
+    lines = [" " * label_width + " +" + "-" * cols + "+"]
+    for row in range(height):
+        if row == 0:
+            label = f"{vmax:>{label_width}.3f}"
+        elif row == height - 1:
+            label = f"{vmin:>{label_width}.3f}"
+        else:
+            label = " " * label_width
+        lines.append(label + " |" + ''.join(grid[row]) + "|")
+    lines.append(" " * label_width + " +" + "-" * cols + "+")
+    return "\n".join(lines)
+
 def get_user_input(prompt: str, timeout: float = 1.0) -> str | None:
     """
     Waits for user input with a timeout, preserving typed characters.
@@ -125,10 +170,13 @@ def display_help_screen():
     print("  'h'         - Display this help screen.")
     print("  'q'         - Quit the application.")
     print("\n[Main Menu]")
-    print("  <number>  - Select an actuator group to view and edit its joints.")
+    print("  <number>    - Select an actuator group to view and edit its joints.")
     print("  'c'         - Toggle control: take control of the robot, or release it if you already hold it.")
     print("\n[Joint Menu]")
-    print("  <number>  - Select a joint to modify its angle.")
+    print("  <number>    - Select a joint to modify its angle.")
+    print("  'b'         - Go back to the main menu.")
+    print("\n[Sensor Menu]")
+    print("  <number>    - Select a sensor to view its live value.")
     print("  'b'         - Go back to the main menu.")
     print("\nPress Enter to return...")
     input()
@@ -158,7 +206,7 @@ def display_main_menu(state: dict):
                'client_count', 'autorefresh', 'has_control', 'active_controller',
                and 'actuator_groups'.
     """
-    print("--- Robot Actuator TUI ---\n")
+    print("--- Robot Monitoring TUI ---\n")
     print(f"Connected Clients: {state.get('client_count', 'N/A')}")
     if state.get('autorefresh'):
         print("[Auto-Refresh: ON]")
@@ -177,6 +225,47 @@ def display_main_menu(state: dict):
     for i, name in enumerate(state.get('actuator_groups', [])):
         print(f"{i+1}. {name}")
     print("\nEnter 'q' to quit or 'h' for help.")
+
+def display_category_menu(state: dict, group_name: str):
+    """
+    Renders the category selection menu for a board group: actuators vs sensors.
+
+    Args:
+        state: A dictionary containing the current UI state.
+        group_name: The name of the board group being displayed.
+    """
+    print(f"--- {group_name} ---\n")
+    if state.get('has_control'):
+        print(">> YOU ARE IN CONTROL of the robot <<\n")
+    else:
+        print(f"!! READ-ONLY (Controlled by {state.get('active_controller')}) !!\n")
+
+    print("1. Actuators")
+    print("2. Sensors")
+    print("\nEnter a number to select a category, 'b' to go back, 'h' for help, or 'q' to quit.")
+
+def display_sensor_menu(state: dict, group_name: str):
+    """
+    Renders the menu listing sensors within a specific group.
+
+    Args:
+        state: A dictionary containing the current UI state.
+        group_name: The name of the board group being displayed.
+    """
+    print(f"--- {group_name} (Sensors) ---")
+    if state.get('has_control'):
+        print(">> YOU ARE IN CONTROL of the robot <<\n")
+    else:
+        print(f"!! READ-ONLY (Controlled by {state.get('active_controller')}) !!\n")
+
+    sensors = state.get('sensors', {}).get(group_name, {}).get('sensors', [])
+    for i, sensor in enumerate(sensors):
+        min_value = sensor.get('min_value')
+        max_value = sensor.get('max_value')
+        range_str = f"{min_value} - {max_value}" if min_value is not None or max_value is not None else "N/A"
+        print(f"{i+1}. {sensor['name']} ({sensor['type']}) - (Range: {range_str})")
+
+    print("\nEnter sensor number to view details, 'b' to go back, 'h' for help, or 'q' to quit.")
 
 def display_joint_menu(state: dict, group_name: str):
     """

@@ -51,6 +51,7 @@ from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy, QoSDur
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from std_msgs.msg import String, Int32
 from sensor_msgs.msg import JointState
+from ros_gz_interfaces.msg import Float32Array
 from lucy_msgs.srv import GetConfig, GetInt, ClientControl
 
 # --- Unique Client ID ---
@@ -121,6 +122,10 @@ class LucyROSInterface(Node):
         # Positions at the last drain; changes are measured against this so slow, sub-epsilon-per-message motion still accumulates past the threshold.
         self._notify_baseline_rad = {}
         self._joint_state_lock = threading.Lock()
+
+        self._sensor_subscriptions = {}     # topic -> rclpy subscription handle
+        self._sensor_sources_by_topic = {}  # topic -> [(sensor_id, array_index), ...]
+        self._sensor_values = {}            # sensor_id -> float (latest value)
 
         # --- Callbacks ---
         # These sets will hold functions to be called when state changes.
@@ -203,6 +208,45 @@ class LucyROSInterface(Node):
         keyed by joint name."""
         with self._joint_state_lock:
             return dict(self._joint_positions_rad)
+
+    def setup_sensor_subscriptions(self, sensors: dict):
+        """
+        Creates one subscription per unique sensor topic found in `sensors`
+        (the dict returned by tui_node.parse_sensors_yaml), fanning out to every
+        sensor on that board by its position in the board's sensor list (which
+        is already sorted by virtual_pin).
+
+        Call once at startup after fetching and parsing the hardware config.
+        Safe to call again: topics already subscribed to are left in place.
+        """
+        if self._is_shutting_down: return
+        for group in sensors.values():
+            topic = group.get('topic')
+            if not topic: continue
+            topic = topic if topic.startswith('/') else f"/{topic}"
+
+            sensor_list = group.get('sensors', [])
+            self._sensor_sources_by_topic.setdefault(topic, [])
+            for array_index, sensor in enumerate(sensor_list):
+                self._sensor_sources_by_topic[topic].append((sensor['name'], array_index))
+
+            if topic not in self._sensor_subscriptions:
+                self._sensor_subscriptions[topic] = self.create_subscription(
+                    Float32Array, topic, self._make_sensor_callback(topic), qos_profile=VOLATILE_QOS)
+                self.get_logger().info(f"Subscribed to pressure-sensor topic: {topic}")
+
+    def _make_sensor_callback(self, topic: str):
+        """Returns a closure bound to `topic` so one generic callback can serve
+        every dynamically-created subscription while still knowing its own topic."""
+        def _callback(msg: Float32Array):
+            for sensor_id, array_index in self._sensor_sources_by_topic.get(topic, []):
+                if 0 <= array_index < len(msg.data):
+                    self._sensor_values[sensor_id] = float(msg.data[array_index])
+        return _callback
+
+    def get_sensor_values(self) -> dict:
+        """Returns a snapshot of the latest pressure-sensor values, keyed by sensor id."""
+        return dict(self._sensor_values)
 
     @property
     def client_id(self) -> str:
