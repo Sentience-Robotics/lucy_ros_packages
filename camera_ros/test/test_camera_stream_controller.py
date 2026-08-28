@@ -14,11 +14,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import os
+import sys
+from unittest.mock import MagicMock
+from unittest.mock import Mock
+from unittest.mock import patch
+
 import pytest
 import rclpy
-import sys
-import os
-from unittest.mock import Mock, patch, MagicMock
 from std_msgs.msg import Int32
 
 # Add scripts directory to path for imports

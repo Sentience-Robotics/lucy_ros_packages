@@ -14,11 +14,13 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import os
+import sys
+from unittest.mock import MagicMock
+from unittest.mock import patch
+
 import pytest
 import rclpy
-import sys
-import os
-from unittest.mock import patch, MagicMock
 from std_msgs.msg import Int32
 from std_srvs.srv import SetBool
 
@@ -47,7 +49,8 @@ class TestCameraPublisher:
 
         # Mock v4l2-ctl output
         mock_subprocess.return_value.returncode = 0
-        mock_subprocess.return_value.stdout = """NVIDIA Tegra Video Input Device (platform:tegra-camrtc-ca):
+        mock_subprocess.return_value.stdout = (
+            """NVIDIA Tegra Video Input Device (platform:tegra-camrtc-ca):
         /dev/media0
 
 webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
@@ -55,6 +58,7 @@ webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
         /dev/video7
         /dev/media3
 """
+        )
 
         # Mock VideoCapture
         mock_cap = MagicMock()
@@ -104,7 +108,8 @@ webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
         # This simulates the real behavior where v4l2-ctl returns 1 if it
         # can't open /dev/video0, but still lists available devices
         mock_subprocess.return_value.returncode = 1
-        mock_subprocess.return_value.stdout = """NVIDIA Tegra Video Input Device (platform:tegra-camrtc-ca):
+        mock_subprocess.return_value.stdout = (
+            """NVIDIA Tegra Video Input Device (platform:tegra-camrtc-ca):
         /dev/media0
 
 webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
@@ -112,6 +117,7 @@ webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
         /dev/video7
         /dev/media3
 """
+        )
 
         # Mock VideoCapture
         mock_cap = MagicMock()
@@ -134,7 +140,7 @@ webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
 
         # Mock v4l2-ctl with no output (truly unavailable)
         mock_subprocess.return_value.returncode = 1
-        mock_subprocess.return_value.stdout = ""
+        mock_subprocess.return_value.stdout = ''
 
         # Mock VideoCapture
         mock_cap = MagicMock()
@@ -157,7 +163,7 @@ webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
         # Mock subprocess and VideoCapture
         mock_subprocess.return_value.returncode = 0
         mock_subprocess.return_value.stdout = (
-            "webcamproduct: usb-webcam:\n        /dev/video6\n"
+            'webcamproduct: usb-webcam:\n        /dev/video6\n'
         )
         mock_cap = MagicMock()
         mock_cap.isOpened.return_value = True
@@ -172,7 +178,7 @@ webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
 
         assert response.success is True
         assert node.is_streaming is True
-        assert "started" in response.message.lower()
+        assert 'started' in response.message.lower()
 
     @patch('cv2.VideoCapture')
     @patch('subprocess.run')
@@ -185,7 +191,7 @@ webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
         # Mock subprocess and VideoCapture
         mock_subprocess.return_value.returncode = 0
         mock_subprocess.return_value.stdout = (
-            "webcamproduct: usb-webcam:\n        /dev/video6\n"
+            'webcamproduct: usb-webcam:\n        /dev/video6\n'
         )
         mock_cap = MagicMock()
         mock_cap.isOpened.return_value = True
@@ -201,7 +207,7 @@ webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
 
         assert response.success is True
         assert node.is_streaming is False
-        assert "stopped" in response.message.lower()
+        assert 'stopped' in response.message.lower()
 
     @patch('cv2.VideoCapture')
     @patch('subprocess.run')
@@ -214,7 +220,7 @@ webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
         # Mock subprocess and VideoCapture
         mock_subprocess.return_value.returncode = 0
         mock_subprocess.return_value.stdout = (
-            "webcamproduct: usb-webcam:\n        /dev/video6\n"
+            'webcamproduct: usb-webcam:\n        /dev/video6\n'
         )
         mock_cap = MagicMock()
         mock_cap.isOpened.return_value = True
@@ -241,7 +247,7 @@ webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
         # Mock subprocess and VideoCapture
         mock_subprocess.return_value.returncode = 0
         mock_subprocess.return_value.stdout = (
-            "webcamproduct: usb-webcam:\n        /dev/video6\n"
+            'webcamproduct: usb-webcam:\n        /dev/video6\n'
         )
         mock_cap = MagicMock()
         mock_cap.isOpened.return_value = True
@@ -269,7 +275,7 @@ webcamproduct: usb-webcam (usb-3610000.usb-4.1.2.2):
         # Mock subprocess and VideoCapture
         mock_subprocess.return_value.returncode = 0
         mock_subprocess.return_value.stdout = (
-            "webcamproduct: usb-webcam:\n        /dev/video6\n"
+            'webcamproduct: usb-webcam:\n        /dev/video6\n'
         )
         mock_cap = MagicMock()
         mock_cap.isOpened.return_value = True

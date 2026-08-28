@@ -10,22 +10,23 @@ from __future__ import annotations
 import threading
 import time
 
-from lucy_msgs.srv import ClientControl, GetInt
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import (
-    QoSDurabilityPolicy,
-    QoSHistoryPolicy,
-    QoSProfile,
-    QoSReliabilityPolicy,
-)
-from std_msgs.msg import Int32, String
+from rclpy.qos import QoSDurabilityPolicy
+from rclpy.qos import QoSHistoryPolicy
+from rclpy.qos import QoSProfile
+from rclpy.qos import QoSReliabilityPolicy
+from std_msgs.msg import Int32
+from std_msgs.msg import String
 
-HEARTBEAT_TOPIC = "/lucy/client_heartbeat"
-CLIENT_COUNT_TOPIC = "/lucy/client_count"
-ACTIVE_CLIENT_TOPIC = "/lucy/active_client"
-GET_CLIENT_COUNT_SERVICE = "/lucy/get_client_count"
-CONTROL_SERVICE = "/lucy/control"
+from lucy_msgs.srv import ClientControl
+from lucy_msgs.srv import GetInt
+
+HEARTBEAT_TOPIC = '/lucy/client_heartbeat'
+CLIENT_COUNT_TOPIC = '/lucy/client_count'
+ACTIVE_CLIENT_TOPIC = '/lucy/active_client'
+GET_CLIENT_COUNT_SERVICE = '/lucy/get_client_count'
+CONTROL_SERVICE = '/lucy/control'
 
 TICK_PERIOD_S = 1.0
 CLIENT_TTL_S = 3.0  # ~3 missed beats at the 1 Hz client cadence
@@ -49,13 +50,13 @@ class ClientRegistryNode(Node):
     """Single-writer registry for connected clients and the active controller."""
 
     def __init__(self) -> None:
-        super().__init__("lucy_client_registry")
+        super().__init__('lucy_client_registry')
 
         # client_id -> last-seen monotonic time.
         # Guarded by _state_lock: callbacks may run on different executor threads.
         # (Not _clients — Node uses that.)
         self._last_seen: dict[str, float] = {}
-        self._active_client: str = ""
+        self._active_client: str = ''
         self._state_lock = threading.Lock()
 
         self._count_pub = self.create_publisher(Int32, CLIENT_COUNT_TOPIC, _LATCHED_QOS)
@@ -69,7 +70,7 @@ class ClientRegistryNode(Node):
 
         self._publish_count()
         self._publish_active()
-        self.get_logger().info("Client registry started")
+        self.get_logger().info('Client registry started')
 
     def _on_heartbeat(self, msg: String) -> None:
         client_id = msg.data
@@ -80,7 +81,7 @@ class ClientRegistryNode(Node):
             self._last_seen[client_id] = time.monotonic()
             count = len(self._last_seen)
         if is_new:
-            self.get_logger().info(f"Client registered: {client_id} ({count} connected)")
+            self.get_logger().info(f'Client registered: {client_id} ({count} connected)')
             self._publish_count()
 
     def _on_tick(self) -> None:
@@ -91,12 +92,12 @@ class ClientRegistryNode(Node):
                 del self._last_seen[cid]
             controller_lost = bool(self._active_client) and self._active_client not in self._last_seen
             if controller_lost:
-                self._active_client = ""
+                self._active_client = ''
             count = len(self._last_seen)
         for cid in expired:
-            self.get_logger().info(f"Client expired: {cid} ({count} connected)")
+            self.get_logger().info(f'Client expired: {cid} ({count} connected)')
         if controller_lost:
-            self.get_logger().info("Active controller expired; control released")
+            self.get_logger().info('Active controller expired; control released')
         # Republish so volatile subscribers (web via rosbridge) converge without a dedicated query; subscribers dedupe by value.
         self._publish_count()
         self._publish_active()
@@ -115,7 +116,7 @@ class ClientRegistryNode(Node):
             with self._state_lock:
                 res.active_client = self._active_client
             res.success = False
-            res.message = "empty client_id"
+            res.message = 'empty client_id'
             return res
         with self._state_lock:
             is_new = req.client_id not in self._last_seen  # a request also proves liveness
@@ -123,7 +124,7 @@ class ClientRegistryNode(Node):
             if req.acquire:
                 self._active_client = req.client_id
             elif self._active_client == req.client_id:
-                self._active_client = ""
+                self._active_client = ''
             res.active_client = self._active_client
         if is_new:
             self._publish_count()
@@ -132,7 +133,7 @@ class ClientRegistryNode(Node):
         )
         self._publish_active()
         res.success = True
-        res.message = "ok"
+        res.message = 'ok'
         return res
 
     def _publish_count(self) -> None:
@@ -156,5 +157,5 @@ def main() -> None:  # pragma: no cover
         rclpy.shutdown()
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == '__main__':  # pragma: no cover
     main()
