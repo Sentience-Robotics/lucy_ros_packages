@@ -1,6 +1,6 @@
 # ros2_control on Lucy (`lucy_ros_packages` + `thais_urdf`)
 
-ROS 2 **Humble**. This document explains **ros2_control**, and how it is implemented in Lucy: hardware plugin, topics, YAML, and launch files. URDF / xacro for `ros2_control` blocks live in **`thais_urdf`**; plugin binary and controller YAML live in **`lucy_ros2_control`**.
+ROS 2 **Jazzy**. This document explains **ros2_control**, and how it is implemented in Lucy: hardware plugin, topics, YAML, and launch files. URDF / xacro for `ros2_control` blocks live in **`thais_urdf`**; plugin binary and controller YAML live in **`lucy_ros2_control`**.
 
 **Related:** [`DEVELOPER.md`](DEVELOPER.md) (repo layout, CI), [`../thais_urdf/docs/DEVELOPER.md`](../../thais_urdf/docs/DEVELOPER.md) (URDF, sim launches).
 
@@ -91,7 +91,7 @@ Implementation (`lucy_ros2_control/src/lucy_system.cpp`):
 
 The same clamp helper (`src/include/position_limit_clamp.hpp`) is reused for the actuator-frame clamp.
 
-> **Gazebo caveat.** `gz_ros2_control` (upstream `humble`) does **not** apply the `<command_interface><param name="min/max">` values inside `write()`. Gazebo may still respect joint limits coming from the spawned model/physics, but ros2_control-level URDF clamping in this repo is enforced by `LucySystemHardware` only. If consistent clamping in Gazebo becomes a hard requirement, the path is to either patch `gz_ros2_control` locally or wire `joint_limits_interface::PositionJointSaturationHandle` on the controllers.
+> **Gazebo caveat.** `gz_ros2_control` (upstream `jazzy`) does **not** apply the `<command_interface><param name="min/max">` values inside `write()`. Gazebo may still respect joint limits coming from the spawned model/physics, but ros2_control-level URDF clamping in this repo is enforced by `LucySystemHardware` only. If consistent clamping in Gazebo becomes a hard requirement, the path is to either patch `gz_ros2_control` locally or wire `joint_limits_interface::PositionJointSaturationHandle` on the controllers.
 
 ---
 

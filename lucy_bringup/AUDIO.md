@@ -2,7 +2,7 @@
 
 **Version:** 1.0.0  
 **Last Updated:** December 2024  
-**Platform:** NVIDIA Jetson AGX Orin, Ubuntu 22.04 LTS, ROS2 Humble
+**Platform:** NVIDIA Jetson AGX Orin, Ubuntu 24.04 LTS, ROS 2 Jazzy
 
 ---
 
@@ -38,7 +38,7 @@ The Lucy robot audio system provides **stereo audio capture and playback** capab
 - ✅ **Stereo capture** - Dual microphone input (2 channels)
 - ✅ **Stereo playback** - Dual speaker output (2 channels)
 - ✅ **Low latency** - PortAudio-based processing optimized for embedded systems
-- ✅ **ROS2 native** - Built on `audio_common` package (ROS2 Humble compatible)
+- ✅ **ROS2 native** - Built on `audio_common` package (ROS 2 Jazzy compatible)
 - ✅ **Configurable** - Sample rates, device selection, buffer sizes
 - ✅ **Resilient** - Auto-respawn on node failures
 - ✅ **Real-time** - Optimized for Jetson AGX Orin hardware

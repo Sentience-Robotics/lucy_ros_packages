@@ -35,7 +35,7 @@ Per-board isolation: one board failing load or wait steps does not stop other bo
 
 ### Passwordless sudo for picotool
 
-`picotool` runs under **sudo**. On Ubuntu 22.04, for unattended flashing install a **sudoers drop-in** that whitelists the **`picotool` binary only** (use the path from `command -v picotool` / `which picotool`):
+`picotool` runs under **sudo**. On Ubuntu 24.04, for unattended flashing install a **sudoers drop-in** that whitelists the **`picotool` binary only** (use the path from `command -v picotool` / `which picotool`):
 
 ```bash
 PICOTOOL="$(command -v picotool)"
