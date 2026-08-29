@@ -14,8 +14,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """Verify launch Python files compile (syntax only; no ROS runtime)."""
-import py_compile
 from pathlib import Path
+import py_compile
 
 
 def test_launch_py_files_compile():

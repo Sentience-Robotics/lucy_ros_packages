@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import warnings
 from pathlib import Path
+import warnings
 
-import pytest
 from ament_flake8.main import main_with_errors
+import pytest
 
 
 @pytest.mark.flake8
@@ -24,15 +24,15 @@ from ament_flake8.main import main_with_errors
 def test_flake8():
     pkg_root = Path(__file__).resolve().parents[1]
     targets = [
-        str(pkg_root / "setup.py"),
-        str(pkg_root / "lucy_config_generator"),
-        str(pkg_root / "test"),
+        str(pkg_root / 'setup.py'),
+        str(pkg_root / 'lucy_config_generator'),
+        str(pkg_root / 'test'),
     ]
     # flake8 uses importlib.metadata.entry_points().get(); Python 3.10+ deprecates it.
     with warnings.catch_warnings():
         warnings.filterwarnings(
-            "ignore",
-            message="SelectableGroups dict interface is deprecated",
+            'ignore',
+            message='SelectableGroups dict interface is deprecated',
             category=DeprecationWarning,
         )
         rc, errors = main_with_errors(argv=targets)

@@ -47,7 +47,7 @@ class CameraStreamController(Node):
         self.current_client_count = 0
         self.is_streaming = False
 
-        self.get_logger().info("Camera stream controller started")
+        self.get_logger().info('Camera stream controller started')
 
     def client_count_callback(self, msg):
         """Handle client count changes."""
@@ -61,7 +61,7 @@ class CameraStreamController(Node):
     def start_streaming(self):
         """Start streaming via service."""
         if not self.start_streaming_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().warn("start_streaming service not available")
+            self.get_logger().warn('start_streaming service not available')
             return
 
         request = SetBool.Request()
@@ -74,16 +74,16 @@ class CameraStreamController(Node):
                 if response.success:
                     self.is_streaming = True
                     self.get_logger().info(
-                        f"Camera streaming started "
-                        f"({self.current_client_count} client(s))"
+                        f'Camera streaming started '
+                        f'({self.current_client_count} client(s))'
                     )
                 else:
                     self.get_logger().warn(
-                        f"Failed to start streaming: {response.message}"
+                        f'Failed to start streaming: {response.message}'
                     )
             except Exception as e:
                 self.get_logger().error(
-                    f"Exception calling start_streaming service: {e}"
+                    f'Exception calling start_streaming service: {e}'
                 )
 
         future.add_done_callback(response_callback)
@@ -91,7 +91,7 @@ class CameraStreamController(Node):
     def stop_streaming(self):
         """Stop streaming via service."""
         if not self.stop_streaming_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().warn("stop_streaming service not available")
+            self.get_logger().warn('stop_streaming service not available')
             return
 
         request = SetBool.Request()
@@ -104,15 +104,15 @@ class CameraStreamController(Node):
                 if response.success:
                     self.is_streaming = False
                     self.get_logger().info(
-                        "Camera streaming stopped (no clients)"
+                        'Camera streaming stopped (no clients)'
                     )
                 else:
                     self.get_logger().warn(
-                        f"Failed to stop streaming: {response.message}"
+                        f'Failed to stop streaming: {response.message}'
                     )
             except Exception as e:
                 self.get_logger().error(
-                    f"Exception calling stop_streaming service: {e}"
+                    f'Exception calling stop_streaming service: {e}'
                 )
 
         future.add_done_callback(response_callback)

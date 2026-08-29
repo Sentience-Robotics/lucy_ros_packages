@@ -7,11 +7,9 @@ from typing import Any
 import yaml
 
 from lucy_config_generator.generate import urdf_joint_names
-from lucy_config_generator.schema import (
-    URDF_IGNORE_LIST_KEYS,
-    URDF_PASSIVE_LIST_KEYS,
-    validate_hardware_yaml,
-)
+from lucy_config_generator.schema import URDF_IGNORE_LIST_KEYS
+from lucy_config_generator.schema import URDF_PASSIVE_LIST_KEYS
+from lucy_config_generator.schema import validate_hardware_yaml
 
 
 @dataclass(frozen=True)
@@ -23,7 +21,7 @@ class ValidationReport:
 def parse_yaml_text(config_yaml: str) -> dict[str, Any]:
     data = yaml.safe_load(config_yaml)
     if not isinstance(data, dict):
-        raise ValueError("YAML root must be a mapping")
+        raise ValueError('YAML root must be a mapping')
     return data
 
 
@@ -44,8 +42,8 @@ def urdf_crosscheck(
     joints = urdf_joint_names(urdf_xacro, base_path, controller_config)
 
     actuated = set()
-    for a in data.get("actuators", []):
-        j = str(a.get("urdf_joint", "")).strip()
+    for a in data.get('actuators', []):
+        j = str(a.get('urdf_joint', '')).strip()
         if not j:
             continue
         actuated.add(j)
@@ -59,6 +57,6 @@ def urdf_crosscheck(
                 passive_ignore.add(x.strip())
 
     for j in sorted(joints - actuated - passive_ignore):
-        warnings.append(f"URDF joint {j!r} is not mapped to any actuator")
+        warnings.append(f'URDF joint {j!r} is not mapped to any actuator')
 
     return ValidationReport(errors=errors, warnings=warnings)

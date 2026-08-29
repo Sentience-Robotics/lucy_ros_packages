@@ -2,21 +2,28 @@
 Entry point for the Lucy CLI TUI actuator node: connects the ROS layer
 (ros_interface.py) to the terminal UI (tui.py) and runs the menu loops.
 """
-import sys
-import os
 import argparse
-import time
-import rclpy
-import math
-import yaml
-from .ros_interface import LucyROSInterface
-from . import tui
-from .tui import (
-    clear_screen, get_user_input, display_help_screen,
-    display_main_menu, display_category_menu, display_joint_menu, display_sensor_menu,
-    get_new_joint_value, display_control_taken_popup, render_sensor_graph,
-)
 from collections import deque
+import math
+import os
+import sys
+import time
+
+import rclpy
+import yaml
+
+from . import tui
+from .ros_interface import LucyROSInterface
+from .tui import clear_screen
+from .tui import display_category_menu
+from .tui import display_control_taken_popup
+from .tui import display_help_screen
+from .tui import display_joint_menu
+from .tui import display_main_menu
+from .tui import display_sensor_menu
+from .tui import get_new_joint_value
+from .tui import get_user_input
+from .tui import render_sensor_graph
 
 GRAPH_WIDTH = 60
 
@@ -99,7 +106,7 @@ def _prompt_choice(autorefresh: bool) -> str | None:
     the input via tui.notify_event()).
     """
     timeout = 1.0 if autorefresh else 3600.0
-    choice = get_user_input("> ", timeout=timeout)
+    choice = get_user_input('> ', timeout=timeout)
     if choice is None or choice == '':
         return None
     return choice.lower()
@@ -124,10 +131,10 @@ def _handle_common_command(ros: LucyROSInterface, choice: str, autorefresh: bool
     if choice == 'c':
         if has_control:
             ros.release_control()
-            print("Releasing control...")
+            print('Releasing control...')
         else:
             ros.take_control()
-            print("Requesting control...")
+            print('Requesting control...')
         time.sleep(0.5)
         return True, autorefresh, False
     return False, autorefresh, False
@@ -167,7 +174,7 @@ def run_tui(ros: LucyROSInterface, actuators: dict, sensors: dict, autorefresh: 
             if not (0 <= idx < len(state['actuator_groups'])):
                 raise ValueError
         except ValueError:
-            print("Invalid input. Refreshing...")
+            print('Invalid input. Refreshing...')
             time.sleep(1)
             continue
 
@@ -214,7 +221,7 @@ def handle_category_menu(ros: LucyROSInterface, actuators: dict, sensors: dict, 
             if quit_app:
                 return autorefresh, True
         else:
-            print("Invalid input. Refreshing...")
+            print('Invalid input. Refreshing...')
             time.sleep(1)
 
     return autorefresh, False
@@ -269,7 +276,7 @@ def _monitor_sensor(ros: LucyROSInterface, sensors: dict, group_name: str, choic
         if not (0 <= idx < len(sensor_list)):
             raise ValueError
     except ValueError:
-        print("Invalid input.")
+        print('Invalid input.')
         time.sleep(1)
         return
 
@@ -279,15 +286,15 @@ def _monitor_sensor(ros: LucyROSInterface, sensors: dict, group_name: str, choic
         clear_screen()
         value = ros.get_sensor_values().get(sensor['name'])
         history.append(value)
-        value_str = f"{value:.3f}" if value is not None else "N/A (no data yet)"
+        value_str = f'{value:.3f}' if value is not None else 'N/A (no data yet)'
         print(f"--- Monitoring: {sensor['name']} ---\n")
         print(f"Type: {sensor['type']}")
         print(f"Associated actuator: {sensor.get('associated_actuator') or 'N/A'}")
-        print(f"Value: {value_str}\n")
+        print(f'Value: {value_str}\n')
         print(render_sensor_graph(history))
         print("\nPress 'b' to go back.")
 
-        choice = get_user_input("> ", timeout=0.5)
+        choice = get_user_input('> ', timeout=0.5)
         if choice is not None and choice.lower() == 'b':
             return
 
@@ -334,7 +341,7 @@ def _edit_joint(ros: LucyROSInterface, state: dict, group_name: str, choice: str
         if not (0 <= joint_idx < len(joints)):
             raise ValueError
     except ValueError:
-        print("Invalid input.")
+        print('Invalid input.')
         time.sleep(1)
         return
 
@@ -353,7 +360,7 @@ def _edit_joint(ros: LucyROSInterface, state: dict, group_name: str, choice: str
     positions = [_actuator_deg_to_joint_rad(j['value'], j['mapping']) for j in joints]
     topic = state['actuators'][group_name]['topic']
     ros.publish_joint_trajectory(topic, names, positions)
-    print("Value updated successfully. Refreshing...")
+    print('Value updated successfully. Refreshing...')
     time.sleep(1)
 
 def parse_actuators_yaml(yaml_string: str) -> dict:
@@ -374,23 +381,23 @@ def parse_actuators_yaml(yaml_string: str) -> dict:
                 urdf_joint = actuator.get('urdf_joint')
                 if not urdf_joint: continue
                 joints.append({
-                    "name": urdf_joint,
-                    "min": float(actuator.get('servo_min_deg', 0.0)),
-                    "max": float(actuator.get('servo_max_deg', 180.0)),
-                    "value": float(actuator.get('servo_default_deg', 90.0)),
+                    'name': urdf_joint,
+                    'min': float(actuator.get('servo_min_deg', 0.0)),
+                    'max': float(actuator.get('servo_max_deg', 180.0)),
+                    'value': float(actuator.get('servo_default_deg', 90.0)),
                     # Servo<->URDF calibration (defaults match LCP: identity map).
-                    "mapping": {
-                        "offset_deg": float(actuator.get('offset_deg', 0.0)),
-                        "direction": float(actuator.get('direction', 1.0)),
-                        "scale": float(actuator.get('scale', 1.0)),
+                    'mapping': {
+                        'offset_deg': float(actuator.get('offset_deg', 0.0)),
+                        'direction': float(actuator.get('direction', 1.0)),
+                        'scale': float(actuator.get('scale', 1.0)),
                     },
                 })
             if joints:
-                group_name = board_id.replace("rp2040_", "").replace("_", " ").title()
-                parsed_actuators[group_name] = {"topic": f"/{ctrl_name}/joint_trajectory", "joints": joints}
+                group_name = board_id.replace('rp2040_', '').replace('_', ' ').title()
+                parsed_actuators[group_name] = {'topic': f'/{ctrl_name}/joint_trajectory', 'joints': joints}
         return parsed_actuators
     except yaml.YAMLError as e:
-        print(f"Error parsing YAML: {e}")
+        print(f'Error parsing YAML: {e}')
         return {}
 
 def parse_sensors_yaml(yaml_string: str) -> dict:
@@ -414,19 +421,19 @@ def parse_sensors_yaml(yaml_string: str) -> dict:
                 max_value = sensor.get('max_value')
                 enabled = sensor.get('enabled')
                 sensors.append({
-                    "name": sensor.get('id', 'Unknown'),
-                    "type": sensor_type,
-                    "associated_actuator": sensor.get('associated_actuator', None),
-                    "min_value": float(min_value) if min_value is not None else None,
-                    "max_value": float(max_value) if max_value is not None else None,
-                    "enabled": bool(enabled) if enabled is not None else None,
+                    'name': sensor.get('id', 'Unknown'),
+                    'type': sensor_type,
+                    'associated_actuator': sensor.get('associated_actuator', None),
+                    'min_value': float(min_value) if min_value is not None else None,
+                    'max_value': float(max_value) if max_value is not None else None,
+                    'enabled': bool(enabled) if enabled is not None else None,
                 })
             if sensors:
-                group_name = board_id.replace("rp2040_", "").replace("_", " ").title()
-                parsed_sensors[group_name] = {"topic": topic_sensor, "sensors": sensors}
+                group_name = board_id.replace('rp2040_', '').replace('_', ' ').title()
+                parsed_sensors[group_name] = {'topic': topic_sensor, 'sensors': sensors}
         return parsed_sensors
     except yaml.YAMLError as e:
-        print(f"Error parsing YAML: {e}")
+        print(f'Error parsing YAML: {e}')
         return {}
 
 
@@ -489,19 +496,19 @@ def main(args=None):
     ros_interface.register_on_control_change(on_control_change)
     ros_interface.register_on_joint_state_change(on_joint_state_change)
 
-    print("Fetching active hardware configuration...")
+    print('Fetching active hardware configuration...')
     config_yaml = ros_interface.get_hardware_config_yaml()
     if not config_yaml:
-        _fail(ros_interface, "Could not retrieve hardware configuration. Is lucy_config_pipeline running?")
+        _fail(ros_interface, 'Could not retrieve hardware configuration. Is lucy_config_pipeline running?')
 
     actuators = parse_actuators_yaml(config_yaml)
     sensors = parse_sensors_yaml(config_yaml)
     if not actuators:
-        _fail(ros_interface, "Failed to parse hardware configuration or no actuators found.")
+        _fail(ros_interface, 'Failed to parse hardware configuration or no actuators found.')
 
     ros_interface.setup_sensor_subscriptions(sensors)
 
-    print("Fetching initial client count...")
+    print('Fetching initial client count...')
     ros_interface.get_initial_client_count()
 
     # Config and client count are in; the main menu is about to render.
@@ -513,7 +520,7 @@ def main(args=None):
         pass
     finally:
         _clear_ready_marker()
-        print("\nShutting down...")
+        print('\nShutting down...')
         ros_interface.shutdown()
         rclpy.try_shutdown()
 
