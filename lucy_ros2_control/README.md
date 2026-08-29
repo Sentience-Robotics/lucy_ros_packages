@@ -14,7 +14,7 @@ ROS 2 Control hardware plugin for Lucy-compatible robots.
 From your colcon workspace:
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install --packages-select lucy_ros2_control
 source install/setup.bash
 ```

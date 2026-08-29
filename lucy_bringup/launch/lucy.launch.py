@@ -354,7 +354,7 @@ def generate_launch_description():
         ]
     )
 
-    # Force value_type=str so ROS 2 launch (Humble) does not try to YAML-parse
+    # Force value_type=str so ROS 2 launch does not try to YAML-parse
     # the xacro output. The URDF starts with `<?xml ...>`, which the YAML
     # loader rejects with "Unable to parse the value of parameter robot_description".
     robot_description = ParameterValue(

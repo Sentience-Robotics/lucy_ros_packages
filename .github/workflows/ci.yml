@@ -13,7 +13,7 @@ jobs:
     name: Build and test
     runs-on: ubuntu-latest
     container:
-      image: osrf/ros:humble-desktop
+      image: osrf/ros:jazzy-desktop
     steps:
       - uses: actions/checkout@v4
 
@@ -51,7 +51,7 @@ jobs:
         shell: bash
         run: |
           apt-get update
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           rosdep install --from-paths src --ignore-src -r -y \
             --skip-keys="audio_common micro_ros_agent realsense2_camera thais_urdf"
 
@@ -59,7 +59,7 @@ jobs:
         working-directory: ws
         shell: bash
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           colcon build --symlink-install \
             --packages-select camera_ros lucy_bringup lucy_ros2_control lucy_config_generator \
             --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
@@ -68,7 +68,7 @@ jobs:
         working-directory: ws
         shell: bash
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           colcon test \
             --packages-select camera_ros lucy_bringup lucy_ros2_control lucy_config_generator \
@@ -79,7 +79,7 @@ jobs:
         working-directory: ws
         shell: bash
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           colcon test-result --verbose
 
@@ -89,7 +89,7 @@ jobs:
         if: success()
         run: |
           set -e
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           mkdir -p build/coverage_reports
           # camera_ros — production code under scripts/

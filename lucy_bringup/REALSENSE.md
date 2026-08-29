@@ -32,7 +32,7 @@ The Intel RealSense D435i is a stereo depth camera that provides:
 - **Board**: Jetson AGX Orin
 - **L4T Version**: R36.4.7 (L4T 36.4.7)
 - **Kernel**: 5.15.148-tegra
-- **Ubuntu**: 22.04.5 LTS
+- **Ubuntu**: 24.04 LTS
 - **JetPack**: 6.0
 
 **Important**: For Jetson AGX Orin with JetPack 6, the **libuvc-backend** installation method is required. This method avoids kernel patching and works on a wider range of platforms. See the [official libuvc-backend installation guide](https://github.com/realsenseai/librealsense/blob/master/doc/libuvc_installation.md).
@@ -77,9 +77,9 @@ After installing the librealsense2 SDK, install the ROS2 wrapper packages. The o
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
-    ros-humble-realsense2-camera \
-    ros-humble-realsense2-camera-msgs \
-    ros-humble-realsense2-description
+    ros-jazzy-realsense2-camera \
+    ros-jazzy-realsense2-camera-msgs \
+    ros-jazzy-realsense2-description
 ```
 
 
@@ -407,6 +407,6 @@ For issues and questions:
 
 **Last Updated**: December 2025  
 **Camera Model**: Intel RealSense D435i  
-**ROS2 Distribution**: Humble  
+**ROS2 Distribution**: Jazzy  
 **Platform**: NVIDIA Jetson AGX Orin
 
