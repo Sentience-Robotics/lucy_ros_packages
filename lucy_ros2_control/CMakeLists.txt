@@ -69,6 +69,13 @@ if(BUILD_TESTING)
   set(AMENT_LINT_AUTO_EXCLUDE
     ament_cmake_cpplint
   )
+  # uncrustify/cppcheck are often missing or flaky on RoboStack macOS/Windows runners
+  if(APPLE OR WIN32)
+    list(APPEND AMENT_LINT_AUTO_EXCLUDE
+      ament_cmake_uncrustify
+      ament_cmake_cppcheck
+    )
+  endif()
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 
