@@ -18,7 +18,6 @@ setup(
     maintainer_email='contact@sentience-robotics.fr',
     description='CLI package for Lucy',
     license='GPL-3.0',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'tui = lucy_cli.tui_node:main'

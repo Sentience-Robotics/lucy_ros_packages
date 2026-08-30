@@ -72,22 +72,26 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 
-  find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(test_position_limit_clamp test/test_position_limit_clamp.cpp)
-  target_include_directories(test_position_limit_clamp PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/include
-  )
+  # RoboStack macOS: gtest_vendor sources pick up mismatched gtest headers from
+  # $CONDA_PREFIX/include (TestInfo API drift). GTests still build on Linux CI.
+  if(NOT APPLE)
+    find_package(ament_cmake_gtest REQUIRED)
+    ament_add_gtest(test_position_limit_clamp test/test_position_limit_clamp.cpp)
+    target_include_directories(test_position_limit_clamp PRIVATE
+      ${PROJECT_SOURCE_DIR}/src/include
+    )
 
-  # Pure on_init helpers: compile the module straight into the test (no ROS node
-  # needed); depends on hardware_interface for ComponentInfo / lexical_casts.
-  ament_add_gtest(test_joint_config
-    test/test_joint_config.cpp
-    src/joint_config.cpp
-  )
-  target_include_directories(test_joint_config PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/include
-  )
-  ament_target_dependencies(test_joint_config hardware_interface)
+    # Pure on_init helpers: compile the module straight into the test (no ROS node
+    # needed); depends on hardware_interface for ComponentInfo / lexical_casts.
+    ament_add_gtest(test_joint_config
+      test/test_joint_config.cpp
+      src/joint_config.cpp
+    )
+    target_include_directories(test_joint_config PRIVATE
+      ${PROJECT_SOURCE_DIR}/src/include
+    )
+    ament_target_dependencies(test_joint_config hardware_interface)
+  endif()
 endif()
 
 ament_package()
