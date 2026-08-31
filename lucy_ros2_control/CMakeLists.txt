@@ -33,10 +33,38 @@ target_include_directories(lucy_ros2_control PUBLIC
 $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/include>
 $<INSTALL_INTERFACE:include/lucy_ros2_control>
 )
-ament_target_dependencies(
-  lucy_ros2_control PUBLIC
-  ${THIS_PACKAGE_INCLUDE_DEPENDS}
+# Link the namespaced CMake targets rather than ament_target_dependencies.
+# ament_target_dependencies expands to each dependency's full ament link list,
+# which includes its <msg>__rosidl_generator_py libraries. Those are built to be
+# loaded inside a Python interpreter: they carry undefined _Py* symbols and
+# deliberately do not link libpython. Dragging them into a C++ plugin makes
+# macOS's flat-namespace dlopen fail to resolve them, so pluginlib rejects the
+# hardware component with "symbol not found in flat namespace
+# '_PyExc_RuntimeError'" and controller_manager never loads any hardware.
+target_link_libraries(lucy_ros2_control PUBLIC
+  hardware_interface::hardware_interface
+  pluginlib::pluginlib
+  rclcpp::rclcpp
+  rclcpp_lifecycle::rclcpp_lifecycle
 )
+
+if(APPLE)
+  # Those dependencies expand to each message package's __rosidl_generator_py
+  # library. Those are built to be loaded inside a Python interpreter: they carry
+  # undefined _Py* symbols and deliberately do not link libpython, because in
+  # `python3` the symbols are already in the process.
+  #
+  # This plugin uses no symbol from any of them, but they still land in its load
+  # commands. ros2_control_node is pure C++, so when pluginlib dlopen()s the
+  # plugin the flat-namespace lookup for '_PyExc_RuntimeError' finds nothing and
+  # the hardware component is rejected — controller_manager then loads no
+  # hardware, spawns no controllers, and nothing publishes /joint_states.
+  #
+  # -dead_strip_dylibs drops dylibs no symbol is used from, removing them before
+  # they can be loaded. Linux binds these lazily and never hits this, so keep the
+  # flag APPLE-only.
+  target_link_options(lucy_ros2_control PRIVATE "LINKER:-dead_strip_dylibs")
+endif()
 
 # Export hardware plugins
 pluginlib_export_plugin_description_file(hardware_interface lucy_ros2_control.xml)
