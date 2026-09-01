@@ -12,13 +12,14 @@ from dataclasses import field
 import os
 from pathlib import Path
 import shutil
-import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 from typing import List, Optional
 
+from ament_index_python.packages import get_package_prefix
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy
@@ -29,6 +30,31 @@ from std_srvs.srv import Trigger
 import yaml
 
 from lucy_control_supervisor.controllers_spawn import controllers_to_spawn
+
+
+_WINDOWS_EXEC_SUFFIXES = ('.exe', '.bat', '.cmd')
+
+
+def node_argv(package: str, executable: str) -> list[str]:
+    """Absolute argv for a node, bypassing the ``ros2 run`` wrapper.
+
+    ``ros2 run`` starts the node as a child of itself, so a signal sent to the
+    wrapper kills the wrapper and leaves the node running. Restarting then
+    stacks a second controller_manager on top of the orphaned first one, and
+    both drive the same joints.
+    """
+    lib_dir = Path(get_package_prefix(package)) / 'lib' / package
+    matches = sorted(
+        (p for p in lib_dir.glob('*') if p.is_file() and p.stem == executable),
+        # Prefer something the OS can exec over a script needing an interpreter.
+        key=lambda p: 0 if not p.suffix or p.suffix.lower() in _WINDOWS_EXEC_SUFFIXES else 1,
+    )
+    if not matches:
+        raise RuntimeError(f'{package}/{executable} not found in {lib_dir}')
+    best = matches[0]
+    if os.name == 'nt' and best.suffix.lower() not in _WINDOWS_EXEC_SUFFIXES:
+        return [sys.executable, str(best)]
+    return [str(best)]
 
 
 @dataclass
@@ -55,6 +81,8 @@ class ControlSupervisorNode(Node):
     TERMINATE_TIMEOUT_S = 10.0
     SPAWN_SETTLE_S = 2.0
     CHILD_LOG_TAIL = 50
+    DISCOVERY_SETTLE_S = 2.0
+    CONTROLLER_MANAGER_NODE = 'controller_manager'
 
     def __init__(self) -> None:
         super().__init__('lucy_control_supervisor')
@@ -134,8 +162,8 @@ class ControlSupervisorNode(Node):
         for child in reversed(self._children):
             if child.popen.poll() is None:
                 try:
-                    child.popen.send_signal(signal.SIGTERM)
-                except ProcessLookupError:
+                    child.popen.terminate()
+                except OSError:
                     pass
         deadline = time.monotonic() + self.TERMINATE_TIMEOUT_S
         for child in self._children:
@@ -143,11 +171,30 @@ class ControlSupervisorNode(Node):
                 time.sleep(0.1)
         for child in self._children:
             if child.popen.poll() is None:
+                self.get_logger().warning(f'{child.name} ignored terminate; killing')
                 try:
                     child.popen.kill()
-                except ProcessLookupError:
+                except OSError:
                     pass
         self._children.clear()
+
+    def _foreign_controller_managers(self) -> List[str]:
+        """controller_manager nodes running that this supervisor did not start.
+
+        Two of them claim the same hardware interfaces and command the same
+        joints from different sources, so the robot follows whichever wrote
+        last. Usually a stack left over from an earlier run.
+        """
+        if any(c.kind == 'cm' and c.popen.poll() is None for c in self._children):
+            return []
+        # Nothing of ours is running, so give discovery a moment to report
+        # anyone else's before concluding the graph is clear.
+        time.sleep(self.DISCOVERY_SETTLE_S)
+        return [
+            f"{namespace.rstrip('/')}/{name}"
+            for name, namespace in self.get_node_names_and_namespaces()
+            if name == self.CONTROLLER_MANAGER_NODE
+        ]
 
     def _start_rsp(self, cfg: _StackConfig, urdf_xml: str) -> None:
         payload = {
@@ -164,10 +211,7 @@ class ControlSupervisorNode(Node):
             yaml.safe_dump(payload, f, sort_keys=False)
             params_file = f.name
         cmd = [
-            'ros2',
-            'run',
-            'robot_state_publisher',
-            'robot_state_publisher',
+            *node_argv('robot_state_publisher', 'robot_state_publisher'),
             '--ros-args',
             '--params-file',
             params_file,
@@ -217,10 +261,7 @@ class ControlSupervisorNode(Node):
 
     def _start_cm(self, cfg: _StackConfig) -> None:
         cmd = [
-            'ros2',
-            'run',
-            'controller_manager',
-            'ros2_control_node',
+            *node_argv('controller_manager', 'ros2_control_node'),
             '--ros-args',
             '--params-file',
             str(cfg.controllers_yaml),
@@ -242,10 +283,7 @@ class ControlSupervisorNode(Node):
             return 'no controllers found in controllers.yaml'
         for name in names:
             cmd = [
-                'ros2',
-                'run',
-                'controller_manager',
-                'spawner',
+                *node_argv('controller_manager', 'spawner'),
                 name,
                 '--switch-timeout',
                 '10',
@@ -271,6 +309,16 @@ class ControlSupervisorNode(Node):
             for p in (cfg.urdf_path, cfg.base_path, cfg.controllers_yaml):
                 if not p.exists():
                     return False, f'missing path: {p}'
+
+            if not cfg.use_gazebo_sim and not cfg.gazebo_only:
+                foreign = self._foreign_controller_managers()
+                if foreign:
+                    return False, (
+                        f"controller_manager already running ({', '.join(foreign)}) "
+                        'and not owned by this supervisor. Two of them drive the '
+                        'same joints, so refusing to start a second. Stop the '
+                        'other Lucy stack, then retry.'
+                    )
 
             self._terminate_children()
             urdf_xml = self._expand_robot_description(cfg)
