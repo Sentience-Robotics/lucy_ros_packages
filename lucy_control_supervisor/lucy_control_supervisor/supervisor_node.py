@@ -20,6 +20,7 @@ import time
 from typing import List, Optional
 
 from ament_index_python.packages import get_package_prefix
+from ament_index_python.packages import PackageNotFoundError
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy
@@ -144,11 +145,13 @@ class ControlSupervisorNode(Node):
             f"use_mock_hardware:={'true' if cfg.use_mock_hardware else 'false'}",
             f'ros2_control_file:={cfg.ros2_control_file}',
         ]
-        if shutil.which('ros2'):
-            return ['ros2', 'run', 'xacro', 'xacro', *tail]
+        try:
+            return [*node_argv('xacro', 'xacro'), *tail]
+        except (RuntimeError, PackageNotFoundError):
+            pass
         if shutil.which('xacro'):
             return ['xacro', *tail]
-        raise RuntimeError('xacro not found on PATH')
+        raise RuntimeError('xacro not found')
 
     def _expand_robot_description(self, cfg: _StackConfig) -> str:
         cmd = self._xacro_cmd(cfg)
