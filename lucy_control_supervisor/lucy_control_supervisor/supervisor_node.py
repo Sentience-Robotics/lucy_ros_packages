@@ -38,10 +38,8 @@ _WINDOWS_EXEC_SUFFIXES = ('.exe', '.bat', '.cmd')
 def node_argv(package: str, executable: str) -> list[str]:
     """Absolute argv for a node, bypassing the ``ros2 run`` wrapper.
 
-    ``ros2 run`` starts the node as a child of itself, so a signal sent to the
-    wrapper kills the wrapper and leaves the node running. Restarting then
-    stacks a second controller_manager on top of the orphaned first one, and
-    both drive the same joints.
+    Signalling that wrapper leaves the node running, so a restart would stack a
+    second controller_manager on the orphaned first and both drive the joints.
     """
     lib_dir = Path(get_package_prefix(package)) / 'lib' / package
     matches = sorted(
@@ -183,9 +181,8 @@ class ControlSupervisorNode(Node):
     def _foreign_controller_managers(self) -> List[str]:
         """controller_manager nodes running that this supervisor did not start.
 
-        Two of them claim the same hardware interfaces and command the same
-        joints from different sources, so the robot follows whichever wrote
-        last. Usually a stack left over from an earlier run.
+        Two of them command the same joints, so the robot follows whichever
+        wrote last. Usually a stack left over from an earlier run.
         """
         if any(c.kind == 'cm' and c.popen.poll() is None for c in self._children):
             return []
@@ -230,10 +227,8 @@ class ControlSupervisorNode(Node):
     def _track(self, name: str, popen: subprocess.Popen, kind: str) -> None:
         """Register a child and keep draining its output.
 
-        These pipes had no reader, so a child blocked once the buffer filled and
-        a child that died left no trace. Children log through ROS already, so the
-        drained lines only go to debug; the tail is replayed at error level if the
-        child exits badly, which is when it is actually needed.
+        Unread pipes stall a chatty child once the buffer fills. Lines go to
+        debug; the tail is replayed at error level only if the child dies badly.
         """
         child = _ManagedProc(name, popen, kind)
         self._children.append(child)
