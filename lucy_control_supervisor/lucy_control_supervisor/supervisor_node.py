@@ -62,6 +62,7 @@ class _ManagedProc:
     name: str
     popen: subprocess.Popen
     kind: str  # rsp | cm | spawner
+    stopping: bool = False  # set when we ask it to stop, so the exit is expected
 
 
 @dataclass
@@ -160,6 +161,7 @@ class ControlSupervisorNode(Node):
 
     def _terminate_children(self) -> None:
         for child in reversed(self._children):
+            child.stopping = True
             if child.popen.poll() is None:
                 try:
                     child.popen.terminate()
@@ -252,7 +254,7 @@ class ControlSupervisorNode(Node):
             while code is None and time.monotonic() < deadline:
                 time.sleep(0.1)
                 code = popen.poll()
-            if code:
+            if code and not child.stopping:
                 self.get_logger().error(f'{name} exited with code {code}')
                 for text in tail:
                     self.get_logger().error(f'[{name}] {text}')
