@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from dataclasses import field
 import os
@@ -14,6 +15,7 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 from typing import List, Optional
 
@@ -52,6 +54,7 @@ class ControlSupervisorNode(Node):
     GAZEBO_RUNNING_TOPIC = '/lucy/gazebo_running'
     TERMINATE_TIMEOUT_S = 10.0
     SPAWN_SETTLE_S = 2.0
+    CHILD_LOG_TAIL = 50
 
     def __init__(self) -> None:
         super().__init__('lucy_control_supervisor')
@@ -175,8 +178,42 @@ class ControlSupervisorNode(Node):
             stderr=subprocess.STDOUT,
             env=os.environ.copy(),
         )
-        self._children.append(_ManagedProc('robot_state_publisher', popen, 'rsp'))
+        self._track('robot_state_publisher', popen, 'rsp')
         time.sleep(self.SPAWN_SETTLE_S)
+
+    def _track(self, name: str, popen: subprocess.Popen, kind: str) -> None:
+        """Register a child and keep draining its output.
+
+        These pipes had no reader, so a child blocked once the buffer filled and
+        a child that died left no trace. Children log through ROS already, so the
+        drained lines only go to debug; the tail is replayed at error level if the
+        child exits badly, which is when it is actually needed.
+        """
+        child = _ManagedProc(name, popen, kind)
+        self._children.append(child)
+        tail: deque = deque(maxlen=self.CHILD_LOG_TAIL)
+
+        def pump() -> None:
+            try:
+                for line in iter(popen.stdout.readline, b''):
+                    text = line.decode('utf-8', 'replace').rstrip()
+                    if text:
+                        tail.append(text)
+                        self.get_logger().debug(f'[{name}] {text}')
+            except (OSError, ValueError):
+                pass
+            # poll rather than wait: _terminate_children polls these same handles.
+            deadline = time.monotonic() + self.TERMINATE_TIMEOUT_S
+            code = popen.poll()
+            while code is None and time.monotonic() < deadline:
+                time.sleep(0.1)
+                code = popen.poll()
+            if code:
+                self.get_logger().error(f'{name} exited with code {code}')
+                for text in tail:
+                    self.get_logger().error(f'[{name}] {text}')
+
+        threading.Thread(target=pump, name=f'pump-{name}', daemon=True).start()
 
     def _start_cm(self, cfg: _StackConfig) -> None:
         cmd = [
@@ -196,7 +233,7 @@ class ControlSupervisorNode(Node):
             stderr=subprocess.STDOUT,
             env=os.environ.copy(),
         )
-        self._children.append(_ManagedProc('ros2_control_node', popen, 'cm'))
+        self._track('ros2_control_node', popen, 'cm')
         time.sleep(self.SPAWN_SETTLE_S)
 
     def _start_spawners(self, cfg: _StackConfig) -> Optional[str]:
@@ -221,7 +258,7 @@ class ControlSupervisorNode(Node):
                 stderr=subprocess.STDOUT,
                 env=os.environ.copy(),
             )
-            self._children.append(_ManagedProc(f'spawner_{name}', popen, 'spawner'))
+            self._track(f'spawner_{name}', popen, 'spawner')
             time.sleep(1.0)
         return None
 
