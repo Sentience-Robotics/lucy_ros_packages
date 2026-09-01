@@ -167,7 +167,7 @@ class ControlSupervisorNode(Node):
         ]
         popen = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.STDOUT,
             env=os.environ.copy(),
         )
@@ -188,7 +188,7 @@ class ControlSupervisorNode(Node):
         ]
         popen = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.STDOUT,
             env=os.environ.copy(),
         )
@@ -213,7 +213,7 @@ class ControlSupervisorNode(Node):
                 cmd.extend(["--ros-args", "-p", "use_sim_time:=true"])
             popen = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.STDOUT,
                 env=os.environ.copy(),
             )
