@@ -16,6 +16,7 @@ from . import tui
 from .ros_interface import LucyROSInterface
 from .tui import clear_screen
 from .tui import display_category_menu
+from .tui import display_control_status
 from .tui import display_control_taken_popup
 from .tui import display_help_screen
 from .tui import display_joint_menu
@@ -111,6 +112,20 @@ def _prompt_choice(autorefresh: bool) -> str | None:
         return None
     return choice.lower()
 
+def _toggle_control(ros: LucyROSInterface, has_control: bool):
+    """Takes or releases control, whichever the current state calls for.
+
+    Shared by the menus and by the sensor monitor screen so that the 'c' key
+    advertised by tui.display_control_status() works everywhere it is shown.
+    """
+    if has_control:
+        ros.release_control()
+        print('Releasing control...')
+    else:
+        ros.take_control()
+        print('Requesting control...')
+    time.sleep(0.5)
+
 def _handle_common_command(ros: LucyROSInterface, choice: str, autorefresh: bool,
                            has_control: bool) -> tuple[bool, bool, bool]:
     """Handles keys shared by every menu (quit / help / auto-refresh / control).
@@ -129,13 +144,7 @@ def _handle_common_command(ros: LucyROSInterface, choice: str, autorefresh: bool
         time.sleep(0.7)
         return True, autorefresh, False
     if choice == 'c':
-        if has_control:
-            ros.release_control()
-            print('Releasing control...')
-        else:
-            ros.take_control()
-            print('Requesting control...')
-        time.sleep(0.5)
+        _toggle_control(ros, has_control)
         return True, autorefresh, False
     return False, autorefresh, False
 
@@ -259,11 +268,12 @@ def handle_sensor_menu(ros: LucyROSInterface, sensors: dict, group_name: str,
             continue
 
         # Menu-specific: monitor a sensor's live value by number.
-        _monitor_sensor(ros, sensors, group_name, choice)
+        _monitor_sensor(ros, sensors, group_name, choice, autorefresh)
 
     return autorefresh, False
 
-def _monitor_sensor(ros: LucyROSInterface, sensors: dict, group_name: str, choice: str):
+def _monitor_sensor(ros: LucyROSInterface, sensors: dict, group_name: str, choice: str,
+                    autorefresh: bool):
     """Continuously displays one sensor's live value until the user goes back.
 
     Read-only: unlike _edit_joint, there's nothing to write, so this loops
@@ -284,10 +294,13 @@ def _monitor_sensor(ros: LucyROSInterface, sensors: dict, group_name: str, choic
     history = deque(maxlen=GRAPH_WIDTH)
     while rclpy.ok():
         clear_screen()
+        state = _build_sensor_state(ros, sensors, autorefresh)
         value = ros.get_sensor_values().get(sensor['name'])
         history.append(value)
         value_str = f'{value:.3f}' if value is not None else 'N/A (no data yet)'
         print(f"--- Monitoring: {sensor['name']} ---\n")
+        display_control_status(state)
+        print()
         print(f"Type: {sensor['type']}")
         print(f"Associated actuator: {sensor.get('associated_actuator') or 'N/A'}")
         print(f'Value: {value_str}\n')
@@ -295,8 +308,13 @@ def _monitor_sensor(ros: LucyROSInterface, sensors: dict, group_name: str, choic
         print("\nPress 'b' to go back.")
 
         choice = get_user_input('> ', timeout=0.5)
-        if choice is not None and choice.lower() == 'b':
+        if choice is None:
+            continue
+        choice = choice.lower()
+        if choice == 'b':
             return
+        if choice == 'c':
+            _toggle_control(ros, state['has_control'])
 
 def handle_actuator_menu(ros: LucyROSInterface, actuators: dict, group_name: str,
                       autorefresh: bool) -> tuple[bool, bool]:

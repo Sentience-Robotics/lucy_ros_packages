@@ -162,6 +162,28 @@ def get_user_input(prompt: str, timeout: float = 1.0) -> str | None:
     # Timeout occurred
     return None
 
+def display_control_status(state: dict):
+    """Prints the control-status banner shown on every TUI screen.
+
+    Always states who holds control (us, another client, or nobody) and always
+    reminds the user of the 'c' key, so the shortcut stays discoverable from any
+    screen rather than only the main menu.
+
+    Args:
+        state: The current UI state; reads 'has_control' and 'active_controller'.
+    """
+    if state.get('has_control'):
+        print('>> YOU ARE IN CONTROL of the robot <<')
+        print("Type 'c' to release control.")
+        return
+
+    controller = state.get('active_controller')
+    if controller:
+        print(f'!! READ-ONLY - CONTROLLED BY: {controller} !!')
+    else:
+        print('No client has control.')
+    print("Type 'c' to take control.")
+
 def display_help_screen():
     """Displays a static help message and waits for user confirmation."""
     clear_screen()
@@ -212,15 +234,7 @@ def display_main_menu(state: dict):
     if state.get('autorefresh'):
         print('[Auto-Refresh: ON]')
     
-    if state.get('has_control'):
-        print('>> YOU ARE IN CONTROL of the robot <<')
-        print("Type 'c' to release control.")
-    else:
-        if state.get('active_controller'):
-            print(f"!! CONTROLLED BY: {state['active_controller']} !!")
-        else:
-            print('No client has control.')
-        print("Type 'c' to take control.")
+    display_control_status(state)
 
     print('\nSelect an actuator group:')
     for i, name in enumerate(state.get('actuator_groups', [])):
@@ -236,10 +250,8 @@ def display_category_menu(state: dict, group_name: str):
         group_name: The name of the board group being displayed.
     """
     print(f'--- {group_name} ---\n')
-    if state.get('has_control'):
-        print('>> YOU ARE IN CONTROL of the robot <<\n')
-    else:
-        print(f"!! READ-ONLY (Controlled by {state.get('active_controller')}) !!\n")
+    display_control_status(state)
+    print()
 
     print('1. Actuators')
     print('2. Sensors')
@@ -254,10 +266,8 @@ def display_sensor_menu(state: dict, group_name: str):
         group_name: The name of the board group being displayed.
     """
     print(f'--- {group_name} (Sensors) ---')
-    if state.get('has_control'):
-        print('>> YOU ARE IN CONTROL of the robot <<\n')
-    else:
-        print(f"!! READ-ONLY (Controlled by {state.get('active_controller')}) !!\n")
+    display_control_status(state)
+    print()
 
     sensors = state.get('sensors', {}).get(group_name, {}).get('sensors', [])
     for i, sensor in enumerate(sensors):
@@ -277,10 +287,8 @@ def display_joint_menu(state: dict, group_name: str):
         group_name: The name of the actuator group being displayed.
     """
     print(f'--- {group_name} ---')
-    if state.get('has_control'):
-        print('>> YOU ARE IN CONTROL of the robot <<\n')
-    else:
-        print(f"!! READ-ONLY (Controlled by {state.get('active_controller')}) !!\n")
+    display_control_status(state)
+    print()
 
     joints = state.get('actuators', {}).get(group_name, {}).get('joints', [])
     for i, joint in enumerate(joints):
