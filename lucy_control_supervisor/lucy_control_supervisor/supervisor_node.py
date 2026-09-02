@@ -19,8 +19,6 @@ import threading
 import time
 from typing import List, Optional
 
-from ament_index_python.packages import get_package_prefix
-from ament_index_python.packages import PackageNotFoundError
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy
@@ -42,6 +40,8 @@ def node_argv(package: str, executable: str) -> list[str]:
     Signalling that wrapper leaves the node running, so a restart would stack a
     second controller_manager on the orphaned first and both drive the joints.
     """
+    from ament_index_python.packages import get_package_prefix
+
     lib_dir = Path(get_package_prefix(package)) / 'lib' / package
     matches = sorted(
         (p for p in lib_dir.glob('*') if p.is_file() and p.stem == executable),
@@ -147,7 +147,7 @@ class ControlSupervisorNode(Node):
         ]
         try:
             return [*node_argv('xacro', 'xacro'), *tail]
-        except (RuntimeError, PackageNotFoundError):
+        except (RuntimeError, KeyError):  # KeyError: package not in the index
             pass
         if shutil.which('xacro'):
             return ['xacro', *tail]
