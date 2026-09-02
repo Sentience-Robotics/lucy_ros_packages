@@ -79,7 +79,8 @@ class ControlSupervisorNode(Node):
     RESTART_SERVICE = '/lucy_control/restart'
     GAZEBO_RUNNING_TOPIC = '/lucy/gazebo_running'
     TERMINATE_TIMEOUT_S = 10.0
-    SPAWN_SETTLE_S = 2.0
+    READY_TIMEOUT_S = 60.0
+    SPAWNER_TIMEOUT_S = 60.0
     CHILD_LOG_TAIL = 50
     DISCOVERY_SETTLE_S = 2.0
     CONTROLLER_MANAGER_NODE = 'controller_manager'
@@ -198,6 +199,22 @@ class ControlSupervisorNode(Node):
             if name == self.CONTROLLER_MANAGER_NODE
         ]
 
+    def _wait_for(self, predicate, timeout_s: float, poll_s: float = 0.1) -> bool:
+        """Poll the ROS graph until `predicate` holds.
+
+        Graph queries go straight to rcl, so this does not need the executor and
+        is safe to call from a service callback.
+        """
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            if predicate():
+                return True
+            time.sleep(poll_s)
+        return predicate()
+
+    def _service_available(self, service: str) -> bool:
+        return any(name == service for name, _ in self.get_service_names_and_types())
+
     def _start_rsp(self, cfg: _StackConfig, urdf_xml: str) -> None:
         payload = {
             'robot_state_publisher': {
@@ -225,7 +242,22 @@ class ControlSupervisorNode(Node):
             env=os.environ.copy(),
         )
         self._track('robot_state_publisher', popen, 'rsp')
-        time.sleep(self.SPAWN_SETTLE_S)
+        ready = self._wait_for(
+            lambda: self.count_publishers('/robot_description') > 0,
+            self.READY_TIMEOUT_S,
+        )
+        if not ready:
+            self.get_logger().warning(
+                'robot_state_publisher did not publish /robot_description within '
+                f'{self.READY_TIMEOUT_S:.0f}s'
+            )
+        # Parameters are read during node construction, so the file has served
+        # its purpose by now. It holds a full URDF; leaving it behind grows /tmp
+        # by a few hundred KB on every start.
+        try:
+            os.unlink(params_file)
+        except OSError:
+            pass
 
     def _track(self, name: str, popen: subprocess.Popen, kind: str) -> None:
         """Register a child and keep draining its output.
@@ -275,7 +307,18 @@ class ControlSupervisorNode(Node):
             env=os.environ.copy(),
         )
         self._track('ros2_control_node', popen, 'cm')
-        time.sleep(self.SPAWN_SETTLE_S)
+        # Spawners serialise on a global lock file and hold it while they wait
+        # for this service. Starting them before it answers makes each one block
+        # for its full 20s lock attempt, so the whole set costs 20s per
+        # controller instead of running back to back.
+        if not self._wait_for(
+            lambda: self._service_available('/controller_manager/list_controllers'),
+            self.READY_TIMEOUT_S,
+        ):
+            self.get_logger().warning(
+                'controller_manager did not offer list_controllers within '
+                f'{self.READY_TIMEOUT_S:.0f}s; spawners may block on the lock'
+            )
 
     def _start_spawners(self, cfg: _StackConfig) -> Optional[str]:
         names = controllers_to_spawn(cfg.controllers_yaml)
@@ -297,7 +340,16 @@ class ControlSupervisorNode(Node):
                 env=os.environ.copy(),
             )
             self._track(f'spawner_{name}', popen, 'spawner')
-            time.sleep(1.0)
+            # One at a time: they contend for the same lock file, so overlapping
+            # them only converts concurrency into lock waits.
+            deadline = time.time() + self.SPAWNER_TIMEOUT_S
+            while popen.poll() is None and time.time() < deadline:
+                time.sleep(0.05)
+            if popen.poll() is None:
+                self.get_logger().warning(
+                    f'spawner for {name} still running after '
+                    f'{self.SPAWNER_TIMEOUT_S:.0f}s; continuing'
+                )
         return None
 
     def _restart_stack(self) -> tuple[bool, str]:
@@ -306,7 +358,13 @@ class ControlSupervisorNode(Node):
         self._restart_lock = True
         try:
             cfg = self._cfg()
-            for p in (cfg.urdf_path, cfg.base_path, cfg.controllers_yaml):
+            # config_pipeline_node generates the ros2_control xacro, so these
+            # can legitimately not exist yet at startup. Waiting for them is what
+            # lets the launch file start this node immediately instead of
+            # guessing a delay that is either too short or wasted.
+            inputs = (cfg.urdf_path, cfg.base_path, cfg.controllers_yaml)
+            self._wait_for(lambda: all(p.exists() for p in inputs), self.READY_TIMEOUT_S)
+            for p in inputs:
                 if not p.exists():
                     return False, f'missing path: {p}'
 
