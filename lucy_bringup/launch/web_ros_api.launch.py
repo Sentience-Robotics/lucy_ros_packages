@@ -23,9 +23,9 @@ Exposes config services and rosbridge for the Vite panel. Composed by
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.actions import ExecuteProcess
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.launch_description_sources import AnyLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
@@ -49,18 +49,26 @@ def generate_launch_description():
         ),
     )
 
-    rosbridge = ExecuteProcess(
-        cmd=[
-            'ros2',
-            'launch',
-            'rosbridge_server',
-            'rosbridge_websocket_launch.xml',
-            'default_call_service_timeout:=5.0',
-            'call_services_in_new_thread:=true',
-            'send_action_goals_in_new_thread:=true',
+    # Included rather than run through `ros2 launch`: that shelled out via
+    # cmd.exe and a console-script shim, and on Windows shutdown signalled only
+    # the outermost of those, leaving rosbridge holding the port.
+    rosbridge = IncludeLaunchDescription(
+        AnyLaunchDescriptionSource(
+            [
+                PathJoinSubstitution(
+                    [
+                        FindPackageShare('rosbridge_server'),
+                        'launch',
+                        'rosbridge_websocket_launch.xml',
+                    ]
+                )
+            ]
+        ),
+        launch_arguments=[
+            ('default_call_service_timeout', '5.0'),
+            ('call_services_in_new_thread', 'true'),
+            ('send_action_goals_in_new_thread', 'true'),
         ],
-        output='screen',
-        shell=True,
     )
 
     config_pipeline_launch = IncludeLaunchDescription(
