@@ -160,7 +160,9 @@ class ConfigServicesNode(Node):
                 res.success = False
                 res.message = f'mesh not found: {candidate}'
                 return res
-            res.data = candidate.read_text()
+            # COLLADA is UTF-8; without this the locale codec is used, which is
+            # cp1252 on a French Windows and mangles or rejects the file.
+            res.data = candidate.read_text(encoding='utf-8')
             res.success = True
             res.message = 'ok'
         except Exception as e:

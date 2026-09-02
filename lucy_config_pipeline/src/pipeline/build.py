@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 import subprocess
+import threading
 
 from .selection import board_build_plan
 from .selection import resolve_firmware_paths
@@ -106,19 +107,25 @@ def _run_command(
         bufsize=1,
     )
     assert process.stdout is not None
+    # The timeout has to arm before the read loop: that loop runs until the pipe
+    # closes, so a child that hangs without exiting never reaches process.wait().
+    # Killing closes the pipe, which ends the loop.
+    watchdog = threading.Timer(timeout_seconds, process.kill)
+    watchdog.start()
     emitted = 0
-    for line in process.stdout:
-        text = line.strip()
-        if not text:
-            continue
-        if emitted < 200:
-            feedback(phase=phase, progress=stream_progress, detail=text, board=board)
-        emitted += 1
     try:
-        return_code = process.wait(timeout=timeout_seconds)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
+        for line in process.stdout:
+            text = line.strip()
+            if not text:
+                continue
+            if emitted < 200:
+                feedback(phase=phase, progress=stream_progress, detail=text, board=board)
+            emitted += 1
+        return_code = process.wait()
+    finally:
+        timed_out = not watchdog.is_alive()
+        watchdog.cancel()
+    if timed_out:
         raise TimeoutError(f"command timed out after {timeout_seconds}s: {' '.join(cmd)}")
     if return_code != 0:
         raise RuntimeError(f"command failed ({return_code}): {' '.join(cmd)}")
