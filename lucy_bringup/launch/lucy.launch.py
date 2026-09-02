@@ -396,15 +396,15 @@ def generate_launch_description():
         actions=[
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
-                [
-                    PathJoinSubstitution(
-                        [
-                            FindPackageShare(LaunchConfiguration('robot_package')),
-                            'launch',
-                            'rviz.launch.py',
-                        ]
-                    )
-                ]
+                    [
+                        PathJoinSubstitution(
+                            [
+                                FindPackageShare(LaunchConfiguration('robot_package')),
+                                'launch',
+                                'rviz.launch.py',
+                            ]
+                        )
+                    ]
                 ),
                 launch_arguments=[
                     ('use_sim_time', use_sim_time),

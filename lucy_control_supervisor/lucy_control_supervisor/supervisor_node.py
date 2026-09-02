@@ -34,6 +34,19 @@ from lucy_control_supervisor.controllers_spawn import controllers_to_spawn
 _WINDOWS_EXEC_SUFFIXES = ('.exe', '.bat', '.cmd')
 
 
+def _control_ready_file() -> Path:
+    """Return where the supervisor records that the control stack is up.
+
+    Lets the launcher's readiness probe be a file read rather than a graph query
+    charged a Pixi activation and an rclpy node.
+    """
+    override = os.environ.get('LUCY_CONTROL_READY_FILE')
+    if override:
+        return Path(override)
+    uid = getattr(os, 'getuid', lambda: 0)()
+    return Path(tempfile.gettempdir()) / f'lucy_control_ready.{uid}'
+
+
 def node_argv(package: str, executable: str) -> list[str]:
     """Absolute argv for a node, bypassing the ``ros2 run`` wrapper.
 
@@ -80,6 +93,7 @@ class ControlSupervisorNode(Node):
     GAZEBO_RUNNING_TOPIC = '/lucy/gazebo_running'
     TERMINATE_TIMEOUT_S = 10.0
     READY_TIMEOUT_S = 60.0
+    CONTROL_READY_FILE = _control_ready_file()
     SPAWNER_TIMEOUT_S = 60.0
     CHILD_LOG_TAIL = 50
     DISCOVERY_SETTLE_S = 2.0
@@ -161,7 +175,31 @@ class ControlSupervisorNode(Node):
             raise RuntimeError(f'xacro failed: {r.stderr or r.stdout}')
         return r.stdout
 
+    def _write_ready_marker(self, activated: int) -> None:
+        """Record "<controller_manager pid> <controllers activated>".
+
+        The pid makes a stale marker fail a liveness check; the count answers any
+        min_active threshold. Nothing is written when this supervisor does not own
+        a controller_manager (Gazebo runs it inside the simulator).
+        """
+        cm = next((c for c in self._children if c.kind == 'cm'), None)
+        if cm is None:
+            return
+        try:
+            # Trailing newline: `read` reports EOF without one, and a reader
+            # that treats that as failure would skip the marker entirely.
+            self.CONTROL_READY_FILE.write_text(f'{cm.popen.pid} {activated}\n')
+        except OSError as exc:
+            self.get_logger().warning(f'could not write {self.CONTROL_READY_FILE}: {exc}')
+
+    def _clear_ready_marker(self) -> None:
+        try:
+            self.CONTROL_READY_FILE.unlink()
+        except OSError:
+            pass
+
     def _terminate_children(self) -> None:
+        self._clear_ready_marker()
         for child in reversed(self._children):
             child.stopping = True
             if child.popen.poll() is None:
@@ -200,10 +238,9 @@ class ControlSupervisorNode(Node):
         ]
 
     def _wait_for(self, predicate, timeout_s: float, poll_s: float = 0.1) -> bool:
-        """Poll the ROS graph until `predicate` holds.
+        """Poll until `predicate` holds.
 
-        Graph queries go straight to rcl, so this does not need the executor and
-        is safe to call from a service callback.
+        Graph queries go straight to rcl, so this is safe from a service callback.
         """
         deadline = time.time() + timeout_s
         while time.time() < deadline:
@@ -251,9 +288,8 @@ class ControlSupervisorNode(Node):
                 'robot_state_publisher did not publish /robot_description within '
                 f'{self.READY_TIMEOUT_S:.0f}s'
             )
-        # Parameters are read during node construction, so the file has served
-        # its purpose by now. It holds a full URDF; leaving it behind grows /tmp
-        # by a few hundred KB on every start.
+        # Read during node construction, so it has served its purpose; it holds a
+        # full URDF and one leaks per start otherwise.
         try:
             os.unlink(params_file)
         except OSError:
@@ -307,10 +343,8 @@ class ControlSupervisorNode(Node):
             env=os.environ.copy(),
         )
         self._track('ros2_control_node', popen, 'cm')
-        # Spawners serialise on a global lock file and hold it while they wait
-        # for this service. Starting them before it answers makes each one block
-        # for its full 20s lock attempt, so the whole set costs 20s per
-        # controller instead of running back to back.
+        # Spawners hold a global lock while waiting for this service, so starting
+        # them before it answers costs each one a full 20s lock attempt.
         if not self._wait_for(
             lambda: self._service_available('/controller_manager/list_controllers'),
             self.READY_TIMEOUT_S,
@@ -340,8 +374,7 @@ class ControlSupervisorNode(Node):
                 env=os.environ.copy(),
             )
             self._track(f'spawner_{name}', popen, 'spawner')
-            # One at a time: they contend for the same lock file, so overlapping
-            # them only converts concurrency into lock waits.
+            # One at a time: they contend for the same lock file.
             deadline = time.time() + self.SPAWNER_TIMEOUT_S
             while popen.poll() is None and time.time() < deadline:
                 time.sleep(0.05)
@@ -358,10 +391,8 @@ class ControlSupervisorNode(Node):
         self._restart_lock = True
         try:
             cfg = self._cfg()
-            # config_pipeline_node generates the ros2_control xacro, so these
-            # can legitimately not exist yet at startup. Waiting for them is what
-            # lets the launch file start this node immediately instead of
-            # guessing a delay that is either too short or wasted.
+            # config_pipeline_node generates the ros2_control xacro, so these can
+            # legitimately not exist yet; waiting replaces a guessed launch delay.
             inputs = (cfg.urdf_path, cfg.base_path, cfg.controllers_yaml)
             self._wait_for(lambda: all(p.exists() for p in inputs), self.READY_TIMEOUT_S)
             for p in inputs:
@@ -389,6 +420,7 @@ class ControlSupervisorNode(Node):
             err = self._start_spawners(cfg)
             if err:
                 return False, err
+            self._write_ready_marker(len(controllers_to_spawn(cfg.controllers_yaml)))
 
             note = ''
             if cfg.use_gazebo_sim:
@@ -419,6 +451,8 @@ def main() -> None:
     try:
         rclpy.spin(node)
     finally:
+        # The children go with this process, so the marker must not outlive it.
+        node._terminate_children()
         node.destroy_node()
         rclpy.shutdown()
 
