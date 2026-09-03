@@ -128,7 +128,8 @@ def _resolve_robot_paths(context):
 
     defaults = {
         'urdf_path': str(robot_root / 'description' / 'urdf' / 'inmoov.urdf.xacro'),
-        'base_path': str(robot_root / 'description'),
+        # Goes into a file:// URI in the xacro, so it must be posix.
+        'base_path': (robot_root / 'description').as_posix(),
         'controllers_yaml': str(robot_root / 'config' / 'controllers.yaml'),
     }
     actions = []
