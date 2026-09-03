@@ -45,7 +45,6 @@ from launch.actions import GroupAction
 from launch.actions import IncludeLaunchDescription
 from launch.actions import LogInfo
 from launch.actions import OpaqueFunction
-from launch.actions import TimerAction
 from launch.conditions import IfCondition
 from launch.conditions import UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -442,30 +441,23 @@ def generate_launch_description():
     ros2_control_launch = GroupAction(
         condition=UnlessCondition(LaunchConfiguration('gazebo')),
         actions=[
-            TimerAction(
-                period=3.0,
-                actions=[
-                    IncludeLaunchDescription(
-                        PythonLaunchDescriptionSource(
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    [
+                        PathJoinSubstitution(
                             [
-                                PathJoinSubstitution(
-                                    [
-                                        FindPackageShare(
-                                            LaunchConfiguration('robot_package')
-                                        ),
-                                        'launch',
-                                        'control.launch.py',
-                                    ]
-                                )
+                                FindPackageShare(LaunchConfiguration('robot_package')),
+                                'launch',
+                                'control.launch.py',
                             ]
-                        ),
-                        launch_arguments=[
-                            ('urdf_path', LaunchConfiguration('urdf_path')),
-                            ('base_path', LaunchConfiguration('base_path')),
-                            ('controllers_yaml', controllers_yaml),
-                            ('use_mock_hardware', use_mock_hardware),
-                        ],
-                    ),
+                        )
+                    ]
+                ),
+                launch_arguments=[
+                    ('urdf_path', LaunchConfiguration('urdf_path')),
+                    ('base_path', LaunchConfiguration('base_path')),
+                    ('controllers_yaml', controllers_yaml),
+                    ('use_mock_hardware', use_mock_hardware),
                 ],
             ),
         ],
