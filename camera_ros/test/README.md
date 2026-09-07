@@ -12,7 +12,7 @@ Unit tests for the `camera_ros` package.
 From the workspace root:
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install --packages-select camera_ros --cmake-args -DBUILD_TESTING=ON
 source install/setup.bash
 ```

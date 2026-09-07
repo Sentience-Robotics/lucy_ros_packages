@@ -22,7 +22,7 @@ Audio nodes are not wired in **`lucy.launch.py`** today (reserved for future use
 From your colcon workspace (e.g. `src/lucy_ros_packages/lucy_bringup`):
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install --packages-select lucy_bringup
 source install/setup.bash
 ```
@@ -112,8 +112,8 @@ The script interrupts the ROS pane (twice), stops the web pane, kills the tmux s
 
 ## System Requirements
 
-- Ubuntu 22.04 on NVIDIA Jetson AGX Orin
-- ROS2 Humble
+- Ubuntu 24.04 on NVIDIA Jetson AGX Orin
+- ROS 2 Jazzy
 - tmux
 - Two RP2040 controllers connected via USB
 - Intel RealSense D435i camera (see [REALSENSE.md](REALSENSE.md) for details)

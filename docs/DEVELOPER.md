@@ -1,6 +1,6 @@
 # Developer guide — `lucy_ros_packages`
 
-ROS 2 **Humble**. For **contributors** who change launch files, nodes, `ros2_control` config, or CI in **this repository only**.
+ROS 2 **Jazzy**. For **contributors** who change launch files, nodes, `ros2_control` config, or CI in **this repository only**.
 
 **Sibling robot description / sim launches**: `../thais_urdf/docs/DEVELOPER.md` when both repos live under the same workspace `src/` (e.g. `lucy_ws/src`). On GitHub: [Sentience-Robotics/thais_urdf](https://github.com/Sentience-Robotics/thais_urdf) → `docs/DEVELOPER.md`.
 
@@ -38,7 +38,7 @@ lucy_ros_packages/
 
 ```bash
 cd lucy_ws   # or your colcon workspace root
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install \
   --packages-select lucy_bringup lucy_ros2_control lucy_config_generator camera_ros
 source install/setup.bash
@@ -102,7 +102,7 @@ source install/setup.bash
 
 ## 5. CI
 
-`.github/workflows/ci.yml` runs in `osrf/ros:humble-desktop` on **pull_request** and on **push** to **`main` / `master` / `dev`** only (avoids duplicate runs when a PR branch is pushed):
+`.github/workflows/ci.yml` runs in `osrf/ros:jazzy-desktop` on **pull_request** and on **push** to **`main` / `master` / `dev`** only (avoids duplicate runs when a PR branch is pushed):
 
 - **`rosdep install --from-paths src`** for `camera_ros`, `lucy_bringup`, `lucy_ros2_control`, `lucy_config_generator`
 - **`colcon build`** with `BUILD_TESTING=ON`

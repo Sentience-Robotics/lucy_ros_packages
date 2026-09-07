@@ -7,35 +7,40 @@ import shutil
 import tempfile
 import threading
 
-from lucy_config_generator.generate import generate
-from lucy_config_generator.schema import resolve_generated_files
-from lucy_msgs.action import ConfigurePipeline
-from rclpy.action import ActionServer, CancelResponse, GoalResponse
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
+from rclpy.action import ActionServer
+from rclpy.action import CancelResponse
+from rclpy.action import GoalResponse
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
 from std_srvs.srv import Trigger
 
+from lucy_config_generator.generate import generate
+from lucy_config_generator.schema import resolve_generated_files
+from lucy_msgs.action import ConfigurePipeline
+
 from ..config_store import ConfigStore
 from ..error_format import format_error_lines
-from ..validation import urdf_crosscheck, validate_schema
+from ..validation import urdf_crosscheck
+from ..validation import validate_schema
 from .build import run_build_phase
-from .flash import (
-    flash_picotool_timeout_seconds,
-    flash_uptime_wait_seconds,
-    flash_usb_wait_seconds,
-    run_flash_phase,
-)
+from .flash import flash_picotool_timeout_seconds
+from .flash import flash_uptime_wait_seconds
+from .flash import flash_usb_wait_seconds
+from .flash import run_flash_phase
 from .models import PipelinePaths
-from .selection import board_build_plan, resolve_mapping_input, select_boards_to_process
+from .selection import board_build_plan
+from .selection import resolve_mapping_input
+from .selection import select_boards_to_process
 
 
 class PipelineActionServer(Node):
-    _BUILD_TIMEOUT_SECONDS = int(os.environ.get("LUCY_PIPELINE_BUILD_TIMEOUT_SEC", "300"))
-    _RELOAD_SERVICE = "/lucy_control/restart"
+    _BUILD_TIMEOUT_SECONDS = int(os.environ.get('LUCY_PIPELINE_BUILD_TIMEOUT_SEC', '300'))
+    _RELOAD_SERVICE = '/lucy_control/restart'
     _RELOAD_TIMEOUT_SECONDS = 15.0
 
     def __init__(self, *, paths: PipelinePaths, config_store: ConfigStore):
-        super().__init__("lucy_config_pipeline")
+        super().__init__('lucy_config_pipeline')
         self._paths = paths
         self._store = config_store
         self._busy_lock = threading.Lock()
@@ -54,7 +59,7 @@ class PipelineActionServer(Node):
         self._action_server = ActionServer(
             self,
             ConfigurePipeline,
-            "configure_pipeline",
+            'configure_pipeline',
             execute_callback=self._execute,
             goal_callback=self._goal_callback,
             cancel_callback=self._cancel_callback,
@@ -82,7 +87,7 @@ class PipelineActionServer(Node):
         phase: str,
         progress: float,
         detail: str,
-        board: str = "",
+        board: str = '',
     ) -> None:
         fb = ConfigurePipeline.Feedback()
         fb.phase = phase
@@ -90,10 +95,10 @@ class PipelineActionServer(Node):
         fb.progress = q
         fb.detail = json.dumps(
             {
-                "phase": phase,
-                "board": board,
-                "progress": q,
-                "message": detail,
+                'phase': phase,
+                'board': board,
+                'progress': q,
+                'message': detail,
             }
         )
         fb.board = board
@@ -101,13 +106,13 @@ class PipelineActionServer(Node):
 
     def _call_reload_service(self, goal_handle) -> tuple[bool, str]:
         if not self._reload_client.wait_for_service(timeout_sec=self._RELOAD_TIMEOUT_SECONDS):
-            return False, f"service {self._RELOAD_SERVICE} not available"
+            return False, f'service {self._RELOAD_SERVICE} not available'
 
         self._feedback(
             goal_handle,
-            phase="reload",
+            phase='reload',
             progress=0.0,
-            detail="restarting control stack",
+            detail='restarting control stack',
         )
         req = Trigger.Request()
         future = self._reload_client.call_async(req)
@@ -120,21 +125,21 @@ class PipelineActionServer(Node):
         future.add_done_callback(lambda _f: done_event.set())
         completed = done_event.wait(timeout=self._RELOAD_TIMEOUT_SECONDS)
         if goal_handle.is_cancel_requested:
-            return False, "reload cancelled"
+            return False, 'reload cancelled'
         if not completed or not future.done():
-            return False, f"reload timed out after {self._RELOAD_TIMEOUT_SECONDS}s"
+            return False, f'reload timed out after {self._RELOAD_TIMEOUT_SECONDS}s'
         resp = future.result()
         if resp is None:
-            return False, "reload service call failed"
+            return False, 'reload service call failed'
         if not resp.success:
-            return False, resp.message or "reload failed"
+            return False, resp.message or 'reload failed'
         self._feedback(
             goal_handle,
-            phase="reload",
+            phase='reload',
             progress=1.0,
-            detail=resp.message or "reload complete",
+            detail=resp.message or 'reload complete',
         )
-        return True, resp.message or "reload complete"
+        return True, resp.message or 'reload complete'
 
     def _generate_to_dir(
         self,
@@ -145,9 +150,9 @@ class PipelineActionServer(Node):
         targets: set[str],
         simulation_only: bool,
     ) -> None:
-        (out_dir / "input.yaml").write_text(config_yaml, encoding="utf-8")
+        (out_dir / 'input.yaml').write_text(config_yaml, encoding='utf-8')
         generate(
-            input_yaml=out_dir / "input.yaml",
+            input_yaml=out_dir / 'input.yaml',
             urdf_xacro=self._paths.urdf_xacro,
             base_path=self._paths.base_path,
             controller_config=self._paths.controller_config,
@@ -168,7 +173,7 @@ class PipelineActionServer(Node):
             goal = goal_handle.request
             result.config_name, config_yaml = resolve_mapping_input(self._store, goal.mapping_file)
 
-            self._feedback(goal_handle, phase="validate", progress=0.1, detail="schema validation")
+            self._feedback(goal_handle, phase='validate', progress=0.1, detail='schema validation')
             data = validate_schema(config_yaml)
 
             for path in (
@@ -179,7 +184,7 @@ class PipelineActionServer(Node):
                 if not path.exists():
                     raise FileNotFoundError(path)
 
-            self._feedback(goal_handle, phase="validate", progress=0.6, detail="urdf cross-check")
+            self._feedback(goal_handle, phase='validate', progress=0.6, detail='urdf cross-check')
             report = urdf_crosscheck(
                 data,
                 self._paths.urdf_xacro,
@@ -188,56 +193,56 @@ class PipelineActionServer(Node):
             )
             if report.errors:
                 result.errors.extend(format_error_lines(report.errors))
-                result.message = "validation failed"
+                result.message = 'validation failed'
                 goal_handle.abort()
                 return result
 
             boards = select_boards_to_process(data, list(goal.boards_to_flash))
             boards_set = set(boards) if boards else None
 
-            with tempfile.TemporaryDirectory(prefix="lucy_config_pipeline_") as tmp:
+            with tempfile.TemporaryDirectory(prefix='lucy_config_pipeline_') as tmp:
                 out_dir = Path(tmp)
 
                 # ros2_control + controllers are always regenerated, regardless of
                 # simulation_only / build_only / dry_run
                 self._feedback(
                     goal_handle,
-                    phase="generate",
+                    phase='generate',
                     progress=0.3,
                     detail=(
-                        "rendering simulation ros2_control"
+                        'rendering simulation ros2_control'
                         if goal.simulation_only
-                        else "rendering ros2_control"
+                        else 'rendering ros2_control'
                     ),
                 )
                 self._generate_to_dir(
                     out_dir=out_dir,
                     config_yaml=config_yaml,
                     boards_filter=None if goal.simulation_only else boards_set,
-                    targets={"ros2_control", "controllers"},
+                    targets={'ros2_control', 'controllers'},
                     simulation_only=goal.simulation_only,
                 )
                 if not goal.dry_run:
                     self._feedback(
                         goal_handle,
-                        phase="generate",
+                        phase='generate',
                         progress=0.5,
-                        detail="installing ros2_control outputs",
+                        detail='installing ros2_control outputs',
                     )
                     self._install_ros2_control_outputs(out_dir, data)
 
                 if not goal.simulation_only:
                     self._feedback(
                         goal_handle,
-                        phase="generate",
+                        phase='generate',
                         progress=0.7,
-                        detail="rendering firmware",
+                        detail='rendering firmware',
                     )
                     self._generate_to_dir(
                         out_dir=out_dir,
                         config_yaml=config_yaml,
                         boards_filter=boards_set,
-                        targets={"firmware"},
+                        targets={'firmware'},
                         simulation_only=False,
                     )
                     if not goal.dry_run:
@@ -264,7 +269,7 @@ class PipelineActionServer(Node):
                         [f"build failed for boards: {', '.join(sorted(build_failed_boards))}"]
                     )
                 )
-                result.message = "build failed"
+                result.message = 'build failed'
                 goal_handle.abort()
                 return result
 
@@ -274,7 +279,7 @@ class PipelineActionServer(Node):
                         [f"build failed for boards: {', '.join(sorted(build_failed_boards))}"]
                     )
                 )
-                result.message = "build failed"
+                result.message = 'build failed'
                 goal_handle.abort()
                 return result
 
@@ -306,7 +311,7 @@ class PipelineActionServer(Node):
                             [f"flash failed for boards: {', '.join(sorted(flash_failed))}"]
                         )
                     )
-                    result.message = "flash failed"
+                    result.message = 'flash failed'
                     goal_handle.abort()
                     return result
                 if flashed_ok:
@@ -322,16 +327,16 @@ class PipelineActionServer(Node):
 
             result.success = True
             if build_failed_boards:
-                result.message = "pipeline completed with partial build failure"
+                result.message = 'pipeline completed with partial build failure'
             else:
-                result.message = "pipeline completed"
+                result.message = 'pipeline completed'
             goal_handle.succeed()
             return result
         except Exception as e:  # pragma: no cover - top-level action guard
             lines = [line for line in str(e).splitlines() if line.strip()]
             raw = lines if lines else [str(e)]
             result.errors.extend(format_error_lines(raw))
-            result.message = f"pipeline failed: {e}"
+            result.message = f'pipeline failed: {e}'
             goal_handle.abort()
             return result
         finally:
@@ -340,22 +345,22 @@ class PipelineActionServer(Node):
 
     def _install_ros2_control_outputs(self, out_dir: Path, data: dict) -> None:
         names = resolve_generated_files(data)
-        xacro_name = names["ros2_control_xacro"]
-        ctrl_name = names["controllers_yaml"]
+        xacro_name = names['ros2_control_xacro']
+        ctrl_name = names['controllers_yaml']
         xacro_dst = (
-            self._paths.robot_root / "description" / "ros2_control" / xacro_name
+            self._paths.robot_root / 'description' / 'ros2_control' / xacro_name
         )
-        ctrl_dst = self._paths.robot_root / "config" / ctrl_name
+        ctrl_dst = self._paths.robot_root / 'config' / ctrl_name
         xacro_dst.parent.mkdir(parents=True, exist_ok=True)
         ctrl_dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(out_dir / xacro_name, xacro_dst)
         shutil.copy2(out_dir / ctrl_name, ctrl_dst)
 
     def _install_firmware_outputs(self, out_dir: Path, data: dict) -> None:
-        firmware_src_dir = str(data.get("firmware", {}).get("source_dir", "")).strip()
+        firmware_src_dir = str(data.get('firmware', {}).get('source_dir', '')).strip()
         if not firmware_src_dir:
             return
-        fw_cfg_dir = (self._paths.workspace_src / firmware_src_dir / "config").resolve()
+        fw_cfg_dir = (self._paths.workspace_src / firmware_src_dir / 'config').resolve()
         fw_cfg_dir.mkdir(parents=True, exist_ok=True)
-        for cfile in out_dir.glob("config_*.c"):
+        for cfile in out_dir.glob('config_*.c'):
             shutil.copy2(cfile, fw_cfg_dir / cfile.name)

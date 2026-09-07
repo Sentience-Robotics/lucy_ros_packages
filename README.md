@@ -1,6 +1,6 @@
 # lucy_ros_packages
 
-ROS 2 **Humble** repository for **Lucy** (Sentience Robotics): runtime bringup, `ros2_control` hardware integration, and camera tooling. This is a **multi-package** repo; each subdirectory under `src/` in your colcon workspace is one `ament` package.
+ROS 2 **Jazzy** repository for **Lucy** (Sentience Robotics): runtime bringup, `ros2_control` hardware integration, and camera tooling. This is a **multi-package** repo; each subdirectory under `src/` in your colcon workspace is one `ament` package.
 
 ## What lives here
 
@@ -21,13 +21,13 @@ Package names match directories (`<name>` in each `package.xml`).
 
 ## Requirements
 
-- **OS**: Ubuntu 22.04
-- **ROS**: [ROS 2 Humble](https://docs.ros.org/en/humble/Installation.html).
+- **OS**: Ubuntu 24.04
+- **ROS**: [ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Installation.html).
 - **Per-package extras**: Jetson-typical USB video and audio stacks for bringup; RealSense SDK stack for `realsense2_camera`; serial devices for micro-ROS. See each package README and `lucy_bringup/REALSENSE.md`.
 
 ## Picotool and passwordless sudo
 
-The **`lucy_config_pipeline`** flash phase runs **`sudo picotool`**. Copy-paste **sudoers** setup (Ubuntu 22.04) lives in **[lucy_config_pipeline/README.md — Passwordless sudo for picotool](lucy_config_pipeline/README.md#passwordless-sudo-for-picotool)** (same repository; no `../` path).
+The **`lucy_config_pipeline`** flash phase runs **`sudo picotool`**. Copy-paste **sudoers** setup (Ubuntu 24.04) lives in **[lucy_config_pipeline/README.md — Passwordless sudo for picotool](lucy_config_pipeline/README.md#passwordless-sudo-for-picotool)** (same repository; no `../` path).
 
 ## Building (colcon workspace)
 
@@ -43,7 +43,7 @@ lucy_ws/
 Example build:
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 cd lucy_ws
 colcon build --symlink-install \
   --packages-select lucy_bringup lucy_ros2_control lucy_config_generator lucy_config_pipeline camera_ros
@@ -74,7 +74,7 @@ Tmux helpers ship with `lucy_bringup` (`system_scripts/`); see [lucy_bringup/REA
 From your **workspace root** (e.g. `lucy_ws`), with packages under `src/lucy_ros_packages/`:
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install \
   --packages-select camera_ros lucy_bringup lucy_ros2_control lucy_config_generator \
   --cmake-args -DBUILD_TESTING=ON

@@ -41,21 +41,31 @@ Example Usage:
         ros_interface.shutdown()
         rclpy.shutdown()
 """
-import threading
-import rclpy
-import time
 import random
-from rclpy.node import Node
+import threading
+import time
+
+import rclpy
 from rclpy.duration import Duration
-from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy, QoSDurabilityPolicy
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from std_msgs.msg import String, Int32
+from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy
+from rclpy.qos import QoSHistoryPolicy
+from rclpy.qos import QoSProfile
+from rclpy.qos import QoSReliabilityPolicy
+from ros_gz_interfaces.msg import Float32Array
 from sensor_msgs.msg import JointState
-from lucy_msgs.srv import GetConfig, GetInt, ClientControl
+from std_msgs.msg import Int32
+from std_msgs.msg import String
+from trajectory_msgs.msg import JointTrajectory
+from trajectory_msgs.msg import JointTrajectoryPoint
+
+from lucy_msgs.srv import ClientControl
+from lucy_msgs.srv import GetConfig
+from lucy_msgs.srv import GetInt
 
 # --- Unique Client ID ---
 # A unique identifier for this specific client instance.
-CLIENT_ID = f"cli_{int(time.time())}_{random.randint(1000, 9999)}"
+CLIENT_ID = f'cli_{int(time.time())}_{random.randint(1000, 9999)}'
 
 # --- Topic & Service Names ---
 # Presence and control go through the lucy_client_registry node; see lucy_cli/developer.md.
@@ -109,7 +119,7 @@ class LucyROSInterface(Node):
         super().__init__('lucy_ros_interface_node')
 
         # --- Internal State ---
-        self._active_controller_id = ""
+        self._active_controller_id = ''
         self._client_count = 0
         self._has_control = False
         self._control_lock = threading.Lock()
@@ -121,6 +131,10 @@ class LucyROSInterface(Node):
         # Positions at the last drain; changes are measured against this so slow, sub-epsilon-per-message motion still accumulates past the threshold.
         self._notify_baseline_rad = {}
         self._joint_state_lock = threading.Lock()
+
+        self._sensor_subscriptions = {}     # topic -> rclpy subscription handle
+        self._sensor_sources_by_topic = {}  # topic -> [(sensor_id, array_index), ...]
+        self._sensor_values = {}            # sensor_id -> float (latest value)
 
         # --- Callbacks ---
         # These sets will hold functions to be called when state changes.
@@ -161,7 +175,7 @@ class LucyROSInterface(Node):
         self._spin_thread = threading.Thread(target=self._executor.spin, daemon=True)
         self._spin_thread.start()
 
-        self.get_logger().info(f"LucyROSInterface started with Client ID: {CLIENT_ID}")
+        self.get_logger().info(f'LucyROSInterface started with Client ID: {CLIENT_ID}')
         # Register as connected. Control is opt-in (the user takes it from the TUI).
         self._publish_heartbeat()
 
@@ -204,6 +218,45 @@ class LucyROSInterface(Node):
         with self._joint_state_lock:
             return dict(self._joint_positions_rad)
 
+    def setup_sensor_subscriptions(self, sensors: dict):
+        """
+        Creates one subscription per unique sensor topic found in `sensors`
+        (the dict returned by tui_node.parse_sensors_yaml), fanning out to every
+        sensor on that board by its position in the board's sensor list (which
+        is already sorted by virtual_pin).
+
+        Call once at startup after fetching and parsing the hardware config.
+        Safe to call again: topics already subscribed to are left in place.
+        """
+        if self._is_shutting_down: return
+        for group in sensors.values():
+            topic = group.get('topic')
+            if not topic: continue
+            topic = topic if topic.startswith('/') else f'/{topic}'
+
+            sensor_list = group.get('sensors', [])
+            self._sensor_sources_by_topic.setdefault(topic, [])
+            for array_index, sensor in enumerate(sensor_list):
+                self._sensor_sources_by_topic[topic].append((sensor['name'], array_index))
+
+            if topic not in self._sensor_subscriptions:
+                self._sensor_subscriptions[topic] = self.create_subscription(
+                    Float32Array, topic, self._make_sensor_callback(topic), qos_profile=VOLATILE_QOS)
+                self.get_logger().info(f'Subscribed to pressure-sensor topic: {topic}')
+
+    def _make_sensor_callback(self, topic: str):
+        """Returns a closure bound to `topic` so one generic callback can serve
+        every dynamically-created subscription while still knowing its own topic."""
+        def _callback(msg: Float32Array):
+            for sensor_id, array_index in self._sensor_sources_by_topic.get(topic, []):
+                if 0 <= array_index < len(msg.data):
+                    self._sensor_values[sensor_id] = float(msg.data[array_index])
+        return _callback
+
+    def get_sensor_values(self) -> dict:
+        """Returns a snapshot of the latest pressure-sensor values, keyed by sensor id."""
+        return dict(self._sensor_values)
+
     @property
     def client_id(self) -> str:
         """Returns the unique ID for this client instance."""
@@ -227,13 +280,13 @@ class LucyROSInterface(Node):
     def take_control(self):
         """Requests control of the robot from the client registry."""
         if self._is_shutting_down: return
-        self.get_logger().info("Requesting control...")
+        self.get_logger().info('Requesting control...')
         self._send_control_request(acquire=True)
 
     def release_control(self):
         """Releases control of the robot via the client registry."""
         if self._is_shutting_down: return
-        self.get_logger().info("Releasing control...")
+        self.get_logger().info('Releasing control...')
         self._send_control_request(acquire=False)
 
     def _send_control_request(self, acquire: bool):
@@ -245,7 +298,7 @@ class LucyROSInterface(Node):
             req = ClientControl.Request(client_id=CLIENT_ID, acquire=acquire)
             self._control_client.call_async(req)
         except Exception as e:
-            self.get_logger().error(f"Control request failed: {e}")
+            self.get_logger().error(f'Control request failed: {e}')
 
     def _publish_heartbeat(self):
         if self._is_shutting_down: return
@@ -267,7 +320,7 @@ class LucyROSInterface(Node):
         """
         if self._is_shutting_down: return
         if controller_topic not in self._joint_publishers:
-            self.get_logger().warn(f"Creating new publisher for an unknown topic: {controller_topic}")
+            self.get_logger().warn(f'Creating new publisher for an unknown topic: {controller_topic}')
             self._joint_publishers[controller_topic] = self.create_publisher(
                 JointTrajectory, controller_topic, qos_profile=VOLATILE_QOS)
 
@@ -281,7 +334,7 @@ class LucyROSInterface(Node):
         msg.points.append(point)
         try:
             publisher.publish(msg)
-            self.get_logger().info(f"Published JointTrajectory to {controller_topic}")
+            self.get_logger().info(f'Published JointTrajectory to {controller_topic}')
         except Exception:
              pass
 
@@ -301,7 +354,7 @@ class LucyROSInterface(Node):
             if not self._get_config_client.wait_for_service(timeout_sec=5.0):
                 self.get_logger().error("'/config/get' service not available.")
                 return None
-            req = GetConfig.Request(config_name="")
+            req = GetConfig.Request(config_name='')
             future = self._get_config_client.call_async(req)
             
             # Create a temporary node solely to wait for THIS specific future.
@@ -314,10 +367,10 @@ class LucyROSInterface(Node):
             if not response or not response.success:
                 self.get_logger().error(f"Failed to get active config: {response.message if response else 'timeout'}")
                 return None
-            self.get_logger().info("Successfully fetched active hardware configuration.")
+            self.get_logger().info('Successfully fetched active hardware configuration.')
             return response.config_yaml
         except Exception as e:
-            self.get_logger().error(f"Exception in get_hardware_config_yaml: {e}")
+            self.get_logger().error(f'Exception in get_hardware_config_yaml: {e}')
             return None
 
     def get_initial_client_count(self) -> int | None:
@@ -344,7 +397,7 @@ class LucyROSInterface(Node):
 
             response = future.result()
             if response:
-                self.get_logger().info(f"Fetched initial client count: {response.value}")
+                self.get_logger().info(f'Fetched initial client count: {response.value}')
                 # Manually update internal state and call callbacks
                 self._client_count = response.value
                 for cb in self._on_client_count_change_callbacks:
@@ -352,7 +405,7 @@ class LucyROSInterface(Node):
                 return response.value
             return None
         except Exception as e:
-            self.get_logger().error(f"Exception in get_initial_client_count: {e}")
+            self.get_logger().error(f'Exception in get_initial_client_count: {e}')
             return None
 
     # --- Internal ROS Callbacks ---
@@ -373,10 +426,10 @@ class LucyROSInterface(Node):
             # nor do we gain control if the message is empty (released).
             if new_controller_id == CLIENT_ID:
                 self._has_control = True
-                self.get_logger().info("This client successfully took control.")
-            elif new_controller_id == "":
+                self.get_logger().info('This client successfully took control.')
+            elif new_controller_id == '':
                 self._has_control = False
-                self.get_logger().info("Control was released by previous client.")
+                self.get_logger().info('Control was released by previous client.')
             else:
                 self._has_control = False
                 self.get_logger().info(f"Control taken by another client: '{new_controller_id}'")
@@ -418,7 +471,7 @@ class LucyROSInterface(Node):
             new_count = msg.data
             if self._client_count != new_count:
                 self._client_count = new_count
-                self.get_logger().info(f"Client count updated: {new_count}")
+                self.get_logger().info(f'Client count updated: {new_count}')
                 # Notify all registered listeners
                 for cb in self._on_client_count_change_callbacks:
                     cb(new_count)
@@ -429,7 +482,7 @@ class LucyROSInterface(Node):
         """Gracefully shuts down the node and its background thread."""
         if self._is_shutting_down: return
 
-        self.get_logger().info("Shutting down LucyROSInterface.")
+        self.get_logger().info('Shutting down LucyROSInterface.')
         # Release before flipping the guard, else release_control() short-circuits.
         self.release_control()
         self._is_shutting_down = True

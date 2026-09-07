@@ -1,6 +1,6 @@
 # camera_ros — USB MJPEG camera publisher
 
-Zero-copy **MJPEG** → `sensor_msgs/CompressedImage` for **ROS 2 Humble**, aimed at **NVIDIA Jetson** (AGX Orin) setups. Uses a **GStreamer** `v4l2src` pipeline and OpenCV with `CAP_GSTREAMER` (no software JPEG re-encode on the hot path when the camera outputs MJPEG).
+Zero-copy **MJPEG** → `sensor_msgs/CompressedImage` for **ROS 2 Jazzy**, aimed at **NVIDIA Jetson** (AGX Orin) setups. Uses a **GStreamer** `v4l2src` pipeline and OpenCV with `CAP_GSTREAMER` (no software JPEG re-encode on the hot path when the camera outputs MJPEG).
 
 The stack targets a **USB UVC webcam** exposed as `/dev/video*`. If you do not pass explicit USB IDs, the node tries to pick a device whose `v4l2-ctl --list-devices` label matches **`webcamproduct`** / **`usb-webcam`** (see `find_camera_by_id()` in `scripts/camera_publisher.py`); otherwise it uses the `device` parameter (default `/dev/video0`).
 
@@ -13,8 +13,8 @@ The stack targets a **USB UVC webcam** exposed as `/dev/video*`. If you do not p
 
 ## Requirements
 
-- Ubuntu 22.04 / Jetson (typical) or similar with V4L2
-- ROS 2 Humble
+- Ubuntu 24.04 / Jetson (typical) or similar with V4L2
+- ROS 2 Jazzy
 - Python 3.10+
 - OpenCV built with **GStreamer** support (`cv2.CAP_GSTREAMER`)
 - GStreamer 1.x, `v4l-utils` (`v4l2-ctl`) for enumeration and tuning
@@ -24,14 +24,14 @@ The stack targets a **USB UVC webcam** exposed as `/dev/video*`. If you do not p
 From your colcon workspace (e.g. `src/lucy_ros_packages/camera_ros`):
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install --packages-select camera_ros
 source install/setup.bash
 ```
 
 ## Quick start
 
-**Prerequisites:** source `/opt/ros/humble/setup.*` then `install/setup.*`.
+**Prerequisites:** source `/opt/ros/jazzy/setup.*` then `install/setup.*`.
 
 Starts **`camera_publisher`** and **`camera_stream_controller`**:
 
