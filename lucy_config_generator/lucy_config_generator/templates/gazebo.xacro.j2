@@ -26,7 +26,7 @@
 
 {% for sensor in sensors %}
   <gazebo>
-    <plugin filename="libmock_sensor.so" name="mock_sensor::MockSensorSystem">
+    <plugin filename="mock_sensor" name="mock_sensor::MockSensorSystem">
       <update_rate>10</update_rate>
       <topic_name>{{ sensor.topic }}</topic_name>
 {% for s in sensor.sensors %}

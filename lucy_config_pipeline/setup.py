@@ -18,7 +18,6 @@ setup(
     maintainer_email='contact@sentience-robotics.fr',
     description='Config store services + pipeline action server for Lucy hardware YAML.',
     license='GPL-3.0',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'config_pipeline_node = src.main:main',

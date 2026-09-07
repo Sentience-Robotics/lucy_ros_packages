@@ -30,6 +30,15 @@ install(FILES
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   find_package(ament_cmake_pytest REQUIRED)
+  set(AMENT_LINT_AUTO_EXCLUDE "")
+  # uncrustify/cppcheck are often missing or flaky on RoboStack macOS/Windows;
+  # Linux CI (lucy_ws scripts/ci_colcon_test.sh) runs the remaining linters.
+  if(APPLE OR WIN32)
+    list(APPEND AMENT_LINT_AUTO_EXCLUDE
+      ament_cmake_uncrustify
+      ament_cmake_cppcheck
+    )
+  endif()
   ament_lint_auto_find_test_dependencies()
   ament_add_pytest_test(test_launch_syntax test/test_launch_syntax.py
     TIMEOUT 120
