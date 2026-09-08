@@ -163,32 +163,6 @@ def _validate_lucy_launch(context):
     return []
 
 
-def create_micro_ros_nodes(device0: str, device1: str):
-    """Create micro-ROS agent nodes for left and right arms (device paths resolved)."""
-    return [
-        Node(
-            package='micro_ros_agent',
-            executable='micro_ros_agent',
-            name='micro_ros_agent_right',
-            arguments=['serial', '--dev', device0],
-            output='screen',
-            respawn=True,
-            respawn_delay=2.0,
-            emulate_tty=True,
-        ),
-        Node(
-            package='micro_ros_agent',
-            executable='micro_ros_agent',
-            name='micro_ros_agent_left',
-            arguments=['serial', '--dev', device1],
-            output='screen',
-            respawn=True,
-            respawn_delay=2.0,
-            emulate_tty=True,
-        ),
-    ]
-
-
 def _real_hardware_stack(context, *args, **kwargs):
     """Build micro-ROS / camera / RealSense only when ``real`` is true (lazy package load)."""
     real = LaunchConfiguration('real').perform(context).lower().strip()
@@ -196,23 +170,23 @@ def _real_hardware_stack(context, *args, **kwargs):
         return []
     device0 = LaunchConfiguration('device0').perform(context)
     device1 = LaunchConfiguration('device1').perform(context)
-    out = list(create_micro_ros_nodes(device0, device1))
+    out = list()
     cam_share = get_package_share_directory('camera_ros')
-    out.append(
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(cam_share, 'launch', 'camera.launch.py')
-            ),
-        )
-    )
-    lucy_share = get_package_share_directory('lucy_bringup')
-    out.append(
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(lucy_share, 'launch', 'realsense.launch.py')
-            ),
-        )
-    )
+    # out.append(
+    #     IncludeLaunchDescription(
+    #         PythonLaunchDescriptionSource(
+    #             os.path.join(cam_share, 'launch', 'camera.launch.py')
+    #         ),
+    #     )
+    # )
+    # lucy_share = get_package_share_directory('lucy_bringup')
+    # out.append(
+    #     IncludeLaunchDescription(
+    #         PythonLaunchDescriptionSource(
+    #             os.path.join(lucy_share, 'launch', 'realsense.launch.py')
+    #         ),
+    #     )
+    # )
     return out
 
 
