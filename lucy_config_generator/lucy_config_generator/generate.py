@@ -271,8 +271,10 @@ def _gazebo_sensors(data: dict[str, Any]) -> list[dict[str, Any]]:
     if 'sensors' not in data:
         return sensors
 
-    tmp_dict = {}
+    tmp_dict: dict[str, list[dict[str, Any]]] = {}
     for sensor in data['sensors']:
+        if not sensor.get('enabled', True):
+            continue
         board_name = sensor['board']
         tmp_dict.setdefault(board_name, []).append({})
 
@@ -332,7 +334,10 @@ def render_ros2_control_xacro(
 ) -> str:
     env = env or _jinja_env()
     tpl = env.get_template('ros2_control.xacro.j2')
-    return tpl.render(blocks=_ros2_control_blocks(data, board_ids, urdf_limits))
+    return tpl.render(
+        robot_name=data.get('robot_name') or 'robot',
+        blocks=_ros2_control_blocks(data, board_ids, urdf_limits),
+    )
 
 
 def render_gazebo_xacro(
@@ -344,6 +349,7 @@ def render_gazebo_xacro(
     env = env or _jinja_env()
     tpl = env.get_template('gazebo.xacro.j2')
     return tpl.render(
+        robot_name=data.get('robot_name') or 'robot',
         blocks=_ros2_control_blocks(data, board_ids, urdf_limits),
         cameras=_gazebo_xacro_cameras(data),
         sensors=_gazebo_sensors(data),
