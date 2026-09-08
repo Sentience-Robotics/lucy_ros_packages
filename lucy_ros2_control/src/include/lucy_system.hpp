@@ -62,6 +62,8 @@ class LucySystemHardware : public hardware_interface::SystemInterface
 public:
   RCLCPP_SHARED_PTR_DEFINITIONS(LucySystemHardware)
 
+  ~LucySystemHardware();
+
   hardware_interface::CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams & params) override;
 
@@ -100,6 +102,9 @@ private:
   /// Initialising sensors / actuators registers in shared memory
   hardware_interface::CallbackReturn init_registers();
 
+  /// Unmap the register table and drop its shm name. Idempotent.
+  void release_registers();
+
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_publisher_;
   rclcpp::Node::SharedPtr node_;
 
@@ -111,9 +116,12 @@ private:
   std::vector<double> hw_commands_;
   std::vector<double> hw_positions_;
 
-  // Table containing the register values of every sensor and actuator
-  SharedRegisters* shared_registers_;
-  char* shared_registers_filename_ = "/dev/shm/shared_registers";
+  // Table containing the register values of every sensor and actuator.
+  // One segment per hardware component: virtual_pin restarts at 0 in every
+  // <ros2_control> block, so a single shared table would alias the left arm's
+  // pin N onto the right arm's pin N.
+  SharedRegisters* shared_registers_{nullptr};
+  std::string shared_registers_name_;
 
   // std::vector<double> hw_velocities_; // We have no velocity for our servos
 

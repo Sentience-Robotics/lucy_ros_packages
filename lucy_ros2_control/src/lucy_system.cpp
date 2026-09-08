@@ -15,8 +15,11 @@
 
 #include "include/lucy_system.hpp"
 
+#include <cctype>
+#include <cerrno>
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <exception>
 #include <limits>
 #include <optional>
@@ -30,6 +33,55 @@
 
 namespace lucy_ros2_control
 {
+namespace
+{
+/// POSIX shm name for one hardware component: "/lucy." + sanitised name.
+///
+/// shm_open() takes a name, not a path: a leading '/' and no other slash.
+/// Darwin also caps it at PSHMNAMLEN (31) and fails with ENAMETOOLONG beyond
+/// that, so an over-long name keeps its tail -- Lucy's components share the
+/// "LucyHardware" prefix and differ only in the suffix.
+std::string shared_registers_name_for(const std::string & component)
+{
+  constexpr std::size_t kMaxShmName = 31;
+  constexpr const char * kPrefix = "/lucy.";
+
+  std::string sanitised;
+  sanitised.reserve(component.size());
+  for (const char c : component) {
+    const bool keep = std::isalnum(static_cast<unsigned char>(c)) != 0 ||
+      c == '_' || c == '-' || c == '.';
+    sanitised.push_back(keep ? c : '_');
+  }
+
+  const std::size_t budget = kMaxShmName - std::strlen(kPrefix);
+  if (sanitised.size() > budget) {
+    sanitised.erase(0, sanitised.size() - budget);
+  }
+  return kPrefix + sanitised;
+}
+}  // namespace
+
+LucySystemHardware::~LucySystemHardware()
+{
+  release_registers();
+}
+
+void LucySystemHardware::release_registers()
+{
+  if (shared_registers_ != nullptr) {
+    munmap(shared_registers_, sizeof(SharedRegisters));
+    shared_registers_ = nullptr;
+  }
+  if (!shared_registers_name_.empty()) {
+    // Drop the name too: a segment outlives its creator, and Darwin rejects
+    // ftruncate() on one that already has a size, so leaving it behind makes
+    // the next run fail to start.
+    shm_unlink(shared_registers_name_.c_str());
+    shared_registers_name_.clear();
+  }
+}
+
 hardware_interface::CallbackReturn LucySystemHardware::on_init(
   const hardware_interface::HardwareComponentInterfaceParams & params)
 {
@@ -197,18 +249,35 @@ hardware_interface::CallbackReturn LucySystemHardware::init_actuator_mappings()
 }
 
 hardware_interface::CallbackReturn LucySystemHardware::init_registers() {
-  int fd = shm_open(shared_registers_filename_, O_CREAT | O_RDWR, 0666);
+  release_registers();
+  const std::string name = shared_registers_name_for(info_.name);
+
+  // O_EXCL so an existing segment is a fact to act on rather than one silently
+  // adopted: it can only be a leak from a run that died before release_registers(),
+  // and Darwin rejects ftruncate() on an already-sized segment (EINVAL).
+  int fd = shm_open(name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0666);
+  if (fd == -1 && errno == EEXIST) {
+    RCLCPP_WARN(
+      get_logger(), "Reclaiming shared memory segment '%s' left by an earlier run.",
+      name.c_str());
+    shm_unlink(name.c_str());
+    fd = shm_open(name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0666);
+  }
   if (fd == -1) {
     RCLCPP_FATAL(
-      get_logger(), "Failed to create shared memory space for register table (shm_open() failed).",
-      info_.name.c_str());
+      get_logger(), "Hardware '%s': shm_open('%s') failed: %s",
+      info_.name.c_str(), name.c_str(), std::strerror(errno));
     return hardware_interface::CallbackReturn::ERROR;
   }
+  // Named from here on, so every later failure unlinks it back out.
+  shared_registers_name_ = name;
 
   if (ftruncate(fd, sizeof(SharedRegisters)) == -1) {
     RCLCPP_FATAL(
-      get_logger(), "Failed to create shared memory space for register table (ftruncate() failed).",
-      info_.name.c_str());
+      get_logger(), "Hardware '%s': ftruncate('%s') failed: %s",
+      info_.name.c_str(), name.c_str(), std::strerror(errno));
+    close(fd);
+    release_registers();
     return hardware_interface::CallbackReturn::ERROR;
   }
 
@@ -218,12 +287,15 @@ hardware_interface::CallbackReturn LucySystemHardware::init_registers() {
 
   if (addr == MAP_FAILED) {
     RCLCPP_FATAL(
-      get_logger(), "Failed to create shared memory space for register table (mmap() failed).",
-      info_.name.c_str());
+      get_logger(), "Hardware '%s': mmap('%s') failed: %s",
+      info_.name.c_str(), name.c_str(), std::strerror(errno));
+    release_registers();
     return hardware_interface::CallbackReturn::ERROR;
   }
 
   shared_registers_ = static_cast<SharedRegisters*>(addr);
+  RCLCPP_INFO(
+    get_logger(), "Register table mapped on shared memory segment '%s'.", name.c_str());
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
