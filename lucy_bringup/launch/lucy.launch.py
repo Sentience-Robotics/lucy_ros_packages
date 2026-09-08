@@ -35,6 +35,7 @@ Arguments:
 
 """
 
+import os
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -107,39 +108,13 @@ def _default_robot_package():
     return ''
 
 
-def _load_robot_launch_defaults(robot_root: Path) -> dict[str, str]:
-    """Relative path defaults from ``config/control.launch.yaml`` when present."""
-    config_path = robot_root / 'config' / 'control.launch.yaml'
-    if not config_path.is_file():
-        return {}
-    try:
-        import yaml
-    except ImportError:
-        return {}
-    try:
-        data = yaml.safe_load(config_path.read_text(encoding='utf-8')) or {}
-    except (OSError, yaml.YAMLError):
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    out: dict[str, str] = {}
-    for key in ('urdf_path', 'base_path', 'controllers_yaml'):
-        value = data.get(key)
-        if isinstance(value, str) and value.strip():
-            out[key] = value.strip()
-    return out
-
-
 def _resolve_robot_paths(context):
     """
     Fill urdf_path / base_path / controllers_yaml from the selected robot_package.
 
-    Prefers ``config/control.launch.yaml`` in the robot package (relative paths
-    resolved against the package root). Falls back to the historical
-    ``description/urdf/inmoov.urdf.xacro`` layout when that file is absent.
-
-    Explicit ``urdf_path`` / ``base_path`` / ``controllers_yaml`` overrides
-    (non-empty) are left untouched.
+    Lets ``robot_package:=<pkg>`` switch the URDF, base meshes and controllers
+    together. Explicit ``urdf_path`` / ``base_path`` / ``controllers_yaml``
+    overrides (non-empty) are left untouched.
     """
     from launch.actions import SetLaunchConfiguration
 
@@ -149,27 +124,12 @@ def _resolve_robot_paths(context):
         return []
     share = get_package_share_directory(robot_package)
     robot_root = _infer_robot_source_root(robot_package, share)
-    launch_defaults = _load_robot_launch_defaults(robot_root)
-
-    def _abs(rel_or_abs: str) -> str:
-        p = Path(rel_or_abs)
-        if p.is_absolute():
-            return str(p)
-        return str((robot_root / p).resolve())
-
-    urdf_rel = launch_defaults.get(
-        'urdf_path', 'description/urdf/robot.urdf.xacro'
-    )
-    base_rel = launch_defaults.get('base_path', 'description')
-    controllers_rel = launch_defaults.get(
-        'controllers_yaml', 'config/controllers.yaml'
-    )
 
     defaults = {
-        'urdf_path': _abs(urdf_rel),
+        'urdf_path': str(robot_root / 'description' / 'urdf' / 'inmoov.urdf.xacro'),
         # Goes into a file:// URI in the xacro, so it must be posix.
-        'base_path': Path(_abs(base_rel)).as_posix(),
-        'controllers_yaml': _abs(controllers_rel),
+        'base_path': (robot_root / 'description').as_posix(),
+        'controllers_yaml': str(robot_root / 'config' / 'controllers.yaml'),
     }
     actions = []
     for key, default_value in defaults.items():
@@ -208,12 +168,42 @@ def _real_hardware_stack(context, *args, **kwargs):
     real = LaunchConfiguration('real').perform(context).lower().strip()
     if real not in ('true', '1', 'yes'):
         return []
-    out = []
+    device0 = LaunchConfiguration('device0').perform(context)
+    device1 = LaunchConfiguration('device1').perform(context)
+    out = list()
+    cam_share = get_package_share_directory('camera_ros')
+    # out.append(
+    #     IncludeLaunchDescription(
+    #         PythonLaunchDescriptionSource(
+    #             os.path.join(cam_share, 'launch', 'camera.launch.py')
+    #         ),
+    #     )
+    # )
+    # lucy_share = get_package_share_directory('lucy_bringup')
+    # out.append(
+    #     IncludeLaunchDescription(
+    #         PythonLaunchDescriptionSource(
+    #             os.path.join(lucy_share, 'launch', 'realsense.launch.py')
+    #         ),
+    #     )
+    # )
     return out
 
 
 def generate_launch_description():
     """Generate launch description for Lucy robot system."""
+    device0_arg = DeclareLaunchArgument(
+        'device0',
+        default_value='/dev/ttyACM0',
+        description='Serial device for first micro-ROS agent (right arm)',
+    )
+
+    device1_arg = DeclareLaunchArgument(
+        'device1',
+        default_value='/dev/ttyACM1',
+        description='Serial device for second micro-ROS agent (left arm)',
+    )
+
     audio_sample_rate_arg = DeclareLaunchArgument(
         'audio_sample_rate',
         default_value='48000',
@@ -278,13 +268,15 @@ def generate_launch_description():
         ),
     )
 
+    # Empty defaults: _resolve_robot_paths fills these from the selected
+    # robot_package at launch time, so robot_package:=<pkg> switches the URDF,
+    # base meshes and controllers together. Non-empty overrides are respected.
     urdf_path_arg = DeclareLaunchArgument(
         'urdf_path',
         default_value='',
         description=(
-            'Top-level robot xacro. Empty -> value from '
-            '<robot_package>/config/control.launch.yaml '
-            '(fallback: description/urdf/robot.urdf.xacro)'
+            'URDF/xacro entry. Empty -> '
+            '<robot_package>/description/urdf/inmoov.urdf.xacro'
         ),
     )
     base_path_arg = DeclareLaunchArgument(
@@ -336,6 +328,9 @@ def generate_launch_description():
         ]
     )
 
+    # Force value_type=str so ROS 2 launch does not try to YAML-parse
+    # the xacro output. The URDF starts with `<?xml ...>`, which the YAML
+    # loader rejects with "Unable to parse the value of parameter robot_description".
     robot_description = ParameterValue(
         Command(
             [
@@ -356,7 +351,6 @@ def generate_launch_description():
     robot_description_dict = {'robot_description': robot_description}
 
     robot_state_publisher = Node(
-        condition=IfCondition(LaunchConfiguration('gazebo')),
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
@@ -365,6 +359,7 @@ def generate_launch_description():
             robot_description_dict,
             {'use_sim_time': LaunchConfiguration('gazebo')},
         ],
+        condition=IfCondition(LaunchConfiguration('gazebo')),
     )
 
     real_hardware = OpaqueFunction(function=_real_hardware_stack)
@@ -444,6 +439,8 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            device0_arg,
+            device1_arg,
             audio_sample_rate_arg,
             audio_capture_device_arg,
             audio_playback_device_arg,
@@ -463,8 +460,8 @@ def generate_launch_description():
             LogInfo(msg='========================================'),
             web_ros_api_launch,
             real_hardware,
-            robot_state_publisher,
             ros2_control_launch,
+            robot_state_publisher,
             rviz,
             gazebo,
             LogInfo(msg='========================================'),
