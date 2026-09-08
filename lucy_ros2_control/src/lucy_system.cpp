@@ -30,7 +30,6 @@
 
 namespace lucy_ros2_control
 {
-
 hardware_interface::CallbackReturn LucySystemHardware::on_init(
   const hardware_interface::HardwareComponentInterfaceParams & params)
 {
@@ -59,6 +58,9 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
     return hardware_interface::CallbackReturn::ERROR;
   }
   if (init_actuator_mappings() != hardware_interface::CallbackReturn::SUCCESS) {
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+  if (init_registers() != hardware_interface::CallbackReturn::SUCCESS) {
     return hardware_interface::CallbackReturn::ERROR;
   }
 
@@ -194,6 +196,37 @@ hardware_interface::CallbackReturn LucySystemHardware::init_actuator_mappings()
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
+hardware_interface::CallbackReturn LucySystemHardware::init_registers() {
+  int fd = shm_open(shared_registers_filename_, O_CREAT | O_RDWR, 0666);
+  if (fd == -1) {
+    RCLCPP_FATAL(
+      get_logger(), "Failed to create shared memory space for register table (shm_open() failed).",
+      info_.name.c_str());
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+
+  if (ftruncate(fd, sizeof(SharedRegisters)) == -1) {
+    RCLCPP_FATAL(
+      get_logger(), "Failed to create shared memory space for register table (ftruncate() failed).",
+      info_.name.c_str());
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+
+  void* addr = mmap(nullptr, sizeof(SharedRegisters),
+                      PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  close(fd); // fd not needed after mmap
+
+  if (addr == MAP_FAILED) {
+    RCLCPP_FATAL(
+      get_logger(), "Failed to create shared memory space for register table (mmap() failed).",
+      info_.name.c_str());
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+
+  shared_registers_ = static_cast<SharedRegisters*>(addr);
+  return hardware_interface::CallbackReturn::SUCCESS;
+}
+
 
 std::vector<hardware_interface::StateInterface> LucySystemHardware::export_state_interfaces()
 {
@@ -270,6 +303,7 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
   msg.header.stamp = node_->get_clock()->now();
   msg.name.clear();
 
+
   if (mappings_.empty()) {
     joint_publisher_->publish(msg);
     return hardware_interface::return_type::OK;
@@ -279,11 +313,10 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
   msg.position.assign(static_cast<size_t>(max_vp) + 1U, 0.0);
 
   for (const auto & m : mappings_) {
+    shared_registers_->register_table[m.virtual_pin] = hw_commands_[m.joint_index];
     msg.position[static_cast<size_t>(m.virtual_pin)] =
       actuator_command_to_servo_rad(m, hw_commands_[m.joint_index]);
   }
-
-  joint_publisher_->publish(msg);
 
   return hardware_interface::return_type::OK;
 }

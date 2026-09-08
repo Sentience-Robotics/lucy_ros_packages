@@ -26,8 +26,13 @@
 
 #include <memory>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <array>
 
 #include "hardware_interface/handle.hpp"
 #include "hardware_interface/hardware_info.hpp"
@@ -48,6 +53,10 @@
 
 namespace lucy_ros2_control
 {
+struct SharedRegisters {
+  uint16_t register_table[256];
+};
+
 class LucySystemHardware : public hardware_interface::SystemInterface
 {
 public:
@@ -88,6 +97,9 @@ private:
   /// Build mappings_, seed default positions, sort and reject duplicate pins.
   hardware_interface::CallbackReturn init_actuator_mappings();
 
+  /// Initialising sensors / actuators registers in shared memory
+  hardware_interface::CallbackReturn init_registers();
+
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_publisher_;
   rclcpp::Node::SharedPtr node_;
 
@@ -98,6 +110,11 @@ private:
   // Store the command for the simulated robot
   std::vector<double> hw_commands_;
   std::vector<double> hw_positions_;
+
+  // Table containing the register values of every sensor and actuator
+  SharedRegisters* shared_registers_;
+  char* shared_registers_filename_ = "/dev/shm/shared_registers";
+
   // std::vector<double> hw_velocities_; // We have no velocity for our servos
 
   /** Per-joint URDF limits from command_interface min/max (rad); ±inf when unset. */
