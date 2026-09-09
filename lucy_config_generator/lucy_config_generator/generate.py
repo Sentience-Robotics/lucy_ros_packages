@@ -306,11 +306,50 @@ def _firmware_template_for_board_class(board_class: str) -> str:
     raise ValueError(f'unknown board_class for firmware template: {board_class!r}')
 
 
+def _firmware_pulse_limits(servo_type: str) -> tuple[int, int]:
+    """Default RP2040 PWM duty counts for ~1–2 ms pulses at 50 Hz (top=24999)."""
+    # Servo type currently only documents mechanical range; pulse window is shared.
+    _ = servo_type
+    return 1250, 2500
+
+
+def render_firmware_yaml(
+    data: dict[str, Any],
+    board_id: str,
+    env: jinja2.Environment | None = None,
+) -> str:
+    """Render Rust builder ``config.yaml`` for one board (actuators only)."""
+    env = env or _jinja_env()
+    actuators_raw = _actuators_for_board(data, board_id, enabled_only=True)
+    actuators: list[dict[str, Any]] = []
+    for a in actuators_raw:
+        min_pulse, max_pulse = _firmware_pulse_limits(str(a.get('servo_type', '180')))
+        actuators.append(
+            {
+                'id': a['id'],
+                'enabled': bool(a.get('enabled', True)),
+                'virtual_pin': int(a['virtual_pin']),
+                'min_pulse': min_pulse,
+                'max_pulse': max_pulse,
+                'min_angle': int(float(a['servo_min_deg'])),
+                'max_angle': int(float(a['servo_max_deg'])),
+                'default_angle': int(float(a['servo_default_deg'])),
+            }
+        )
+    tpl = env.get_template('config_board.yaml.j2')
+    return tpl.render(
+        board_id=board_id,
+        slave_address=1,
+        actuators=actuators,
+    )
+
+
 def render_firmware_c(
     data: dict[str, Any],
     board_id: str,
     env: jinja2.Environment | None = None,
 ) -> str:
+    """Deprecated C renderer kept for golden-test migration; prefer render_firmware_yaml."""
     env = env or _jinja_env()
     actuators = _actuators_for_board(data, board_id, enabled_only=True)
     sensors = _sensors_for_board_firmware(data, board_id)
@@ -440,8 +479,8 @@ def generate(
     if targets & {'firmware', 'all'} and not simulation_only:
         fw_boards = _resolve_board_ids(data, boards_filter)
         for bid in fw_boards:
-            text = render_firmware_c(data, bid, env)
-            out = output_dir / f'config_{bid}.c'
+            text = render_firmware_yaml(data, bid, env)
+            out = output_dir / f'config_{bid}.yaml'
             out.write_text(text, encoding='utf-8')
 
     if targets & {'ros2_control', 'all'}:
@@ -493,7 +532,7 @@ def generate_from_xacro_string_for_tests(
     out: dict[str, str] = {}
     if targets & {'firmware', 'all'} and not simulation_only:
         for bid in firmware_boards:
-            out[f'config_{bid}.c'] = render_firmware_c(data, bid, env)
+            out[f'config_{bid}.yaml'] = render_firmware_yaml(data, bid, env)
     if targets & {'ros2_control', 'all'}:
         out[names['ros2_control_xacro']] = render_ros2_control_xacro(
             data, board_ids, urdf_limits, env

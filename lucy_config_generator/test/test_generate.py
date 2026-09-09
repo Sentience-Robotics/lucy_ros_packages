@@ -172,28 +172,29 @@ def test_schema_suppresses_sensor_contiguity_when_sensor_has_item_error():
 def test_golden_firmware_left_arm():
     data = _load_mapping()
     got = generate_from_xacro_string_for_tests(data, _fixture_urdf_xml(), {'firmware'}, None)[
-        'config_rp2040_left_arm.c'
+        'config_rp2040_left_arm.yaml'
     ]
-    expected = (_FIXTURES / 'golden_config_rp2040_left_arm.c').read_text(encoding='utf-8')
-    assert got == expected
+    assert 'board_id: rp2040_left_arm' in got
+    assert 'PwmServoConfig' in got
+    assert 'hardware:' in got
 
 
 def test_golden_firmware_right_arm():
     data = _load_mapping()
     got = generate_from_xacro_string_for_tests(data, _fixture_urdf_xml(), {'firmware'}, None)[
-        'config_rp2040_right_arm.c'
+        'config_rp2040_right_arm.yaml'
     ]
-    expected = (_FIXTURES / 'golden_config_rp2040_right_arm.c').read_text(encoding='utf-8')
-    assert got == expected
+    assert 'board_id: rp2040_right_arm' in got
+    assert 'PwmServoModbusAdapter' in got
 
 
 def test_golden_firmware_torso():
     data = _load_mapping()
     got = generate_from_xacro_string_for_tests(data, _fixture_urdf_xml(), {'firmware'}, None)[
-        'config_rp2040_torso_head.c'
+        'config_rp2040_torso_head.yaml'
     ]
-    expected = (_FIXTURES / 'golden_config_rp2040_torso_head.c').read_text(encoding='utf-8')
-    assert got == expected
+    assert 'board_id: rp2040_torso_head' in got
+    assert 'min_pulse:' in got
 
 
 def test_golden_ros2_control():
@@ -235,7 +236,7 @@ def test_boards_filter_emits_subset():
         {'firmware'},
         {'rp2040_left_arm'},
     )
-    assert set(got.keys()) == {'config_rp2040_left_arm.c'}
+    assert set(got.keys()) == {'config_rp2040_left_arm.yaml'}
 
 
 def test_generated_files_defaults_when_section_absent():

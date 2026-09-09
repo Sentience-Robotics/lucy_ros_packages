@@ -15,8 +15,8 @@
 
 #include "include/lucy_system.hpp"
 
-#include <format>
 #include <cmath>
+#include <format>
 #include <cstddef>
 #include <exception>
 #include <limits>
@@ -111,20 +111,19 @@ hardware_interface::CallbackReturn LucySystemHardware::configure_publisher()
 
   node_ = std::make_shared<rclcpp::Node>(node_name_);
 
-  // RELIABLE to match micro-ROS rclc_subscription_init_default (RELIABLE). A BEST_EFFORT publisher
-  // does not match a RELIABLE subscription in ROS 2, so the Pico would receive no commands.
+  // RELIABLE QoS kept for optional JointState debug publishers.
   if (publish_actuators_) {
     rclcpp::QoS qos(rclcpp::KeepLast(10));
     qos.reliable();
     joint_publisher_ = node_->create_publisher<sensor_msgs::msg::JointState>(publisher_topic, qos);
     RCLCPP_INFO(
       get_logger(),
-      "Publishing joint state on topic '%s' (RELIABLE for micro-ROS default subscriber)",
+      "Publishing joint state on topic '%s' (debug/legacy path; actuation uses SHM+Modbus)",
       publisher_topic.c_str());
   } else {
     RCLCPP_INFO(
       get_logger(),
-      "publish_actuators=false: URDF limits enforced in-process only (no actuator topics).");
+      "publish_actuators=false: URDF limits enforced in-process only (SHM register path).");
   }
 
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -338,36 +337,28 @@ hardware_interface::return_type LucySystemHardware::read(
 hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
-  for (std::size_t i = 0; i < hw_commands_.size(); ++i) {
-    const double cmd_rad = hw_commands_[i];
-    if (std::abs(hw_commands_[i] - hw_old_commands_[i]) > 0.001) {
-      hw_commands_[i] = cmd_rad;
-      hw_positions_[i] = cmd_rad;
-      hw_old_commands_[i] = cmd_rad;
-
-      sem_wait(sem_);
-      shared_registers_->register_table[i * 2] = 1;
-      shared_registers_->register_table[i * 2 + 1] = static_cast<uint16_t>(hw_commands_[i] * 1000);
-      register_header_->set_dirty(i * 2);
-      register_header_->set_dirty(i * 2 + 1);
-      sem_post(sem_);
-    }
-  }
-
-  if (!publish_actuators_ || !joint_publisher_) {
-    return hardware_interface::return_type::OK;
-  }
-
-  // Firmware reads inputs->position.data[joint->config.virtual_pin] per configured joint.
-
-  if (mappings_.empty()) {
-    return hardware_interface::return_type::OK;
-  }
-
+  // Encode servo angle into Modbus holding registers (milliradians = rad * 1000):
+  //   reg[virtual_pin * 2]     = cmd (1 = move)
+  //   reg[virtual_pin * 2 + 1] = angle_millirad
   for (const auto & m : mappings_) {
+    const double cmd_rad = hw_commands_[m.joint_index];
+    if (std::abs(cmd_rad - hw_old_commands_[m.joint_index]) <= 0.001) {
+      continue;
+    }
+    hw_old_commands_[m.joint_index] = cmd_rad;
+    hw_positions_[m.joint_index] = cmd_rad;
 
-    //msg.position[static_cast<size_t>(m.virtual_pin)] =
-      actuator_command_to_servo_rad(m, hw_commands_[m.joint_index]);
+    const double servo_rad = actuator_command_to_servo_rad(m, cmd_rad);
+    const uint16_t angle_millirad = static_cast<uint16_t>(
+      std::lround(servo_rad * 1000.0));
+    const uint16_t base = static_cast<uint16_t>(m.virtual_pin * 2);
+
+    sem_wait(sem_);
+    shared_registers_->register_table[base] = 1;
+    shared_registers_->register_table[base + 1] = angle_millirad;
+    register_header_->set_dirty(base);
+    register_header_->set_dirty(static_cast<uint16_t>(base + 1));
+    sem_post(sem_);
   }
 
   return hardware_interface::return_type::OK;

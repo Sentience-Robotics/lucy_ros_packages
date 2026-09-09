@@ -23,9 +23,9 @@ Invalid combinations raise at launch parse time (clear ``RuntimeError``).
 
 Arguments:
 ---------
-- ``real`` (default ``true``): micro-ROS agents, USB webcam, RealSense. When false, those
-  nodes are not constructed (``OpaqueFunction``), so e.g. Docker without ``micro_ros_agent``
-  can run ``real:=false``.
+- ``real`` (default ``true``): USB webcam / RealSense peripherals. When false, those
+  nodes are not constructed (``OpaqueFunction``), so e.g. Docker without camera devices
+  can run ``real:=false``. Hardware boards are driven via Modbus (``lucy_modbus_bridge``).
 - ``rviz`` (default ``false``): RViz2 (real/sim time set per mode). With ``gazebo:=true``,
   forwarded as ``start_rviz`` to ``inmoov_urdf/gazebo.launch.py`` (no second RViz).
 - ``gazebo`` (default ``false``): GZ Sim stack from ``inmoov_urdf``; requires ``real:=false``.
@@ -34,6 +34,8 @@ Arguments:
   keep producing frames without an X server. Forwarded to ``inmoov_urdf/gazebo.launch.py``.
 
 """
+
+from __future__ import annotations
 
 import os
 from pathlib import Path
@@ -163,28 +165,72 @@ def _validate_lucy_launch(context):
     return []
 
 
+def _modbus_node_name(board_id: str) -> str:
+    """Match ``lucy_config_generator.schema.derive_ros2_node_name``."""
+    suffix = board_id
+    if board_id.startswith('rp2040_'):
+        suffix = board_id[len('rp2040_') :]
+    return f'lucy_hardware_interface_{suffix}'
+
+
+def _resolve_hardware_yaml(context) -> Path | None:
+    """Locate active hardware YAML for Modbus bridge spawn."""
+    config_dir = LaunchConfiguration('config_dir').perform(context).strip()
+    if config_dir:
+        candidate = Path(config_dir) / 'active.yaml'
+        return candidate if candidate.is_file() else None
+    robot_package = LaunchConfiguration('robot_package').perform(context).strip()
+    if not robot_package:
+        return None
+    share = get_package_share_directory(robot_package)
+    robot_root = _infer_robot_source_root(robot_package, share)
+    candidate = robot_root / 'config' / 'hardware' / 'active.yaml'
+    return candidate if candidate.is_file() else None
+
+
 def _real_hardware_stack(context, *args, **kwargs):
-    """Build micro-ROS / camera / RealSense only when ``real`` is true (lazy package load)."""
+    """Spawn Modbus bridges (+ optional cameras) when ``real`` is true."""
     real = LaunchConfiguration('real').perform(context).lower().strip()
     if real not in ('true', '1', 'yes'):
         return []
-    out = list()
-    cam_share = get_package_share_directory('camera_ros')
-    # out.append(
-    #     IncludeLaunchDescription(
-    #         PythonLaunchDescriptionSource(
-    #             os.path.join(cam_share, 'launch', 'camera.launch.py')
-    #         ),
-    #     )
-    # )
-    # lucy_share = get_package_share_directory('lucy_bringup')
-    # out.append(
-    #     IncludeLaunchDescription(
-    #         PythonLaunchDescriptionSource(
-    #             os.path.join(lucy_share, 'launch', 'realsense.launch.py')
-    #         ),
-    #     )
-    # )
+    out = []
+
+    hw_yaml = _resolve_hardware_yaml(context)
+    if hw_yaml is not None:
+        try:
+            import yaml
+        except ImportError as exc:  # pragma: no cover
+            raise RuntimeError('PyYAML required to spawn lucy_modbus_bridge nodes') from exc
+        data = yaml.safe_load(hw_yaml.read_text(encoding='utf-8')) or {}
+        boards = data.get('boards') or {}
+        for board_id, bdef in boards.items():
+            if not isinstance(bdef, dict):
+                continue
+            serial = str(bdef.get('serial_id') or '').strip()
+            if not serial:
+                continue
+            node_name = _modbus_node_name(board_id)
+            out.append(
+                Node(
+                    package='lucy_modbus_bridge',
+                    executable='modbus_bridge_node',
+                    name=f'modbus_bridge_{board_id}',
+                    output='screen',
+                    parameters=[
+                        {
+                            'node_name': node_name,
+                            'serial_id': serial,
+                            'slave_address': 1,
+                        }
+                    ],
+                )
+            )
+            out.append(
+                LogInfo(msg=f'lucy.launch: Modbus bridge for {board_id} serial={serial}')
+            )
+
+    # Cameras / RealSense remain opt-in (commented) until wiring is restored.
+    _ = get_package_share_directory('camera_ros')
     return out
 
 
@@ -230,7 +276,7 @@ def generate_launch_description():
     real_arg = DeclareLaunchArgument(
         'real',
         default_value='false',
-        description='If true: micro-ROS agents, USB webcam, RealSense',
+        description='If true: lucy_modbus_bridge per board, USB webcam, RealSense',
     )
 
     rviz_arg = DeclareLaunchArgument(
