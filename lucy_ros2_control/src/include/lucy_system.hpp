@@ -29,10 +29,16 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <array>
+
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <array>
+#include <semaphore.h>
+#include <stdio.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
 
 #include "hardware_interface/handle.hpp"
 #include "hardware_interface/hardware_info.hpp"
@@ -53,9 +59,41 @@
 
 namespace lucy_ros2_control
 {
+
+struct RegisterHeader {
+    uint32_t header[32];
+
+    bool get_register_status(uint16_t reg) {
+        uint16_t index = reg / 8;
+        uint16_t index2 = reg % 8;
+        return ((header[index] >> (7 - index2)) & 0b1) != 0;
+    }
+
+    void switch_register_status(uint16_t reg) {
+        uint16_t index = reg / 8;
+        uint16_t index2 = reg % 8;
+        header[index] = header[index] ^ ((1 & 0xFF) << (7 - index2));
+    }
+
+    void set_dirty(uint16_t reg) {
+        if (get_register_status(reg)) {
+            return;
+        }
+        switch_register_status(reg);
+    }
+
+    void set_clean(uint16_t reg) {
+        if (!get_register_status(reg)) {
+            return;
+        }
+        switch_register_status(reg);
+    }
+};
+
 struct SharedRegisters {
   uint16_t register_table[256];
 };
+
 
 class LucySystemHardware : public hardware_interface::SystemInterface
 {
@@ -103,17 +141,22 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_publisher_;
   rclcpp::Node::SharedPtr node_;
 
+  std::string node_name_;
+
   // Objects for logging
   std::shared_ptr<rclcpp::Logger> logger_;
   // rclcpp::Clock::SharedPtr clock_;
 
   // Store the command for the simulated robot
+  std::vector<double> hw_old_commands_;
   std::vector<double> hw_commands_;
   std::vector<double> hw_positions_;
 
   // Table containing the register values of every sensor and actuator
+  RegisterHeader* register_header_;
   SharedRegisters* shared_registers_;
-  char* shared_registers_filename_ = "/dev/shm/shared_registers";
+  sem_t *sem_;
+  std::string shared_registers_filename_ = "";
 
   // std::vector<double> hw_velocities_; // We have no velocity for our servos
 

@@ -168,8 +168,6 @@ def _real_hardware_stack(context, *args, **kwargs):
     real = LaunchConfiguration('real').perform(context).lower().strip()
     if real not in ('true', '1', 'yes'):
         return []
-    device0 = LaunchConfiguration('device0').perform(context)
-    device1 = LaunchConfiguration('device1').perform(context)
     out = list()
     cam_share = get_package_share_directory('camera_ros')
     # out.append(
@@ -192,18 +190,6 @@ def _real_hardware_stack(context, *args, **kwargs):
 
 def generate_launch_description():
     """Generate launch description for Lucy robot system."""
-    device0_arg = DeclareLaunchArgument(
-        'device0',
-        default_value='/dev/ttyACM0',
-        description='Serial device for first micro-ROS agent (right arm)',
-    )
-
-    device1_arg = DeclareLaunchArgument(
-        'device1',
-        default_value='/dev/ttyACM1',
-        description='Serial device for second micro-ROS agent (left arm)',
-    )
-
     audio_sample_rate_arg = DeclareLaunchArgument(
         'audio_sample_rate',
         default_value='48000',
@@ -359,7 +345,6 @@ def generate_launch_description():
             robot_description_dict,
             {'use_sim_time': LaunchConfiguration('gazebo')},
         ],
-        condition=IfCondition(LaunchConfiguration('gazebo')),
     )
 
     real_hardware = OpaqueFunction(function=_real_hardware_stack)
@@ -439,8 +424,6 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            device0_arg,
-            device1_arg,
             audio_sample_rate_arg,
             audio_capture_device_arg,
             audio_playback_device_arg,

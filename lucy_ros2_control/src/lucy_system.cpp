@@ -15,6 +15,7 @@
 
 #include "include/lucy_system.hpp"
 
+#include <format>
 #include <cmath>
 #include <cstddef>
 #include <exception>
@@ -43,10 +44,21 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
   logger_ = std::make_shared<rclcpp::Logger>(
     rclcpp::get_logger((info_.name).c_str()));
 
-  // resizing command and state vectors
+  {
+    auto it = info_.hardware_parameters.find("node_name");
+    if (it != info_.hardware_parameters.end()) {
+      node_name_ = it->second;
+    } else {
+      node_name_ = "lucy_hardware_interface";
+    }
+
+
+  }
+    // resizing command and state vectors
   hw_positions_.resize(info_.joints.size(), 0);
   // hw_velocities_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN()); // no velocities for our servos
   hw_commands_.resize(info_.joints.size(), 0);
+  hw_old_commands_.resize(info_.joints.size(), 0);
 
   if (validate_joints() != hardware_interface::CallbackReturn::SUCCESS) {
     return hardware_interface::CallbackReturn::ERROR;
@@ -97,12 +109,7 @@ hardware_interface::CallbackReturn LucySystemHardware::configure_publisher()
     publisher_topic = it_topic->second;
   }
 
-  std::string node_name = "lucy_hardware_interface";
-  auto it_node = info_.hardware_parameters.find("node_name");
-  if (it_node != info_.hardware_parameters.end() && !it_node->second.empty()) {
-    node_name = it_node->second;
-  }
-  node_ = std::make_shared<rclcpp::Node>(node_name);
+  node_ = std::make_shared<rclcpp::Node>(node_name_);
 
   // RELIABLE to match micro-ROS rclc_subscription_init_default (RELIABLE). A BEST_EFFORT publisher
   // does not match a RELIABLE subscription in ROS 2, so the Pico would receive no commands.
@@ -197,33 +204,71 @@ hardware_interface::CallbackReturn LucySystemHardware::init_actuator_mappings()
 }
 
 hardware_interface::CallbackReturn LucySystemHardware::init_registers() {
-  int fd = shm_open(shared_registers_filename_, O_CREAT | O_RDWR, 0666);
-  if (fd == -1) {
-    RCLCPP_FATAL(
-      get_logger(), "Failed to create shared memory space for register table (shm_open() failed).",
-      info_.name.c_str());
-    return hardware_interface::CallbackReturn::ERROR;
-  }
+  { // REGISTER
+    int fd = shm_open(std::format("/{}.lucy_reg_table", node_name_).c_str(), O_CREAT | O_RDWR, 0666);
+    if (fd == -1) {
+      RCLCPP_FATAL(
+        get_logger(), "Failed to create shared memory space for register table (shm_open() failed).",
+        info_.name.c_str());
+      return hardware_interface::CallbackReturn::ERROR;
+    }
 
-  if (ftruncate(fd, sizeof(SharedRegisters)) == -1) {
-    RCLCPP_FATAL(
-      get_logger(), "Failed to create shared memory space for register table (ftruncate() failed).",
-      info_.name.c_str());
-    return hardware_interface::CallbackReturn::ERROR;
-  }
+    if (ftruncate(fd, sizeof(SharedRegisters)) == -1) {
+      RCLCPP_FATAL(
+        get_logger(), "Failed to create shared memory space for register table (ftruncate() failed).",
+        info_.name.c_str());
+      return hardware_interface::CallbackReturn::ERROR;
+    }
 
-  void* addr = mmap(nullptr, sizeof(SharedRegisters),
+    void* addr = mmap(nullptr, sizeof(SharedRegisters),
                       PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-  close(fd); // fd not needed after mmap
+    close(fd); // fd not needed after mmap
+  
+    if (addr == MAP_FAILED) {
+      RCLCPP_FATAL(
+        get_logger(), "Failed to create shared memory space for register table (mmap() failed).",
+        info_.name.c_str());
+      return hardware_interface::CallbackReturn::ERROR;
+    }
 
-  if (addr == MAP_FAILED) {
-    RCLCPP_FATAL(
-      get_logger(), "Failed to create shared memory space for register table (mmap() failed).",
-      info_.name.c_str());
-    return hardware_interface::CallbackReturn::ERROR;
+    shared_registers_ = static_cast<SharedRegisters*>(addr);
   }
 
-  shared_registers_ = static_cast<SharedRegisters*>(addr);
+  { // REGISTER TABLE
+    int fd = shm_open(std::format("/{}.lucy_reg_header", node_name_).c_str(), O_CREAT | O_RDWR, 0666);
+    if (fd == -1) {
+      RCLCPP_FATAL(
+        get_logger(), "Failed to create shared memory space for register table (shm_open() failed).",
+        info_.name.c_str());
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+
+    if (ftruncate(fd, sizeof(RegisterHeader)) == -1) {
+      RCLCPP_FATAL(
+        get_logger(), "Failed to create shared memory space for register table (ftruncate() failed).",
+        info_.name.c_str());
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+
+    void* addr = mmap(nullptr, sizeof(RegisterHeader),
+                      PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    close(fd); // fd not needed after mmap
+  
+    if (addr == MAP_FAILED) {
+      RCLCPP_FATAL(
+        get_logger(), "Failed to create shared memory space for register table (mmap() failed).", info_.name.c_str());
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+
+    register_header_ = static_cast<RegisterHeader*>(addr);
+  }
+
+  sem_ = sem_open(std::format("/{}", node_name_).c_str(), O_CREAT, 0644, 1);
+  if (sem_ == SEM_FAILED) {
+    RCLCPP_FATAL(
+        get_logger(), "Failed to create named sem.", info_.name.c_str());
+    return hardware_interface::CallbackReturn::ERROR;
+  }
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -269,6 +314,12 @@ hardware_interface::CallbackReturn LucySystemHardware::on_deactivate(
 {
   RCLCPP_INFO(get_logger(), "Successfully deactivated!");
 
+  if (sem_ != SEM_FAILED && sem_ != nullptr) {
+    sem_close(sem_);
+    sem_unlink(std::format("/{}", node_name_).c_str());
+    sem_ = SEM_FAILED;
+  }
+
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -288,10 +339,19 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
   for (std::size_t i = 0; i < hw_commands_.size(); ++i) {
-    const double cmd_rad = lucy_ros2_control::clamp_position_command(
-      hw_commands_[i], joint_min_rad_[i], joint_max_rad_[i]);
-    hw_commands_[i] = cmd_rad;
-    hw_positions_[i] = cmd_rad;
+    const double cmd_rad = hw_commands_[i];
+    if (std::abs(hw_commands_[i] - hw_old_commands_[i]) > 0.001) {
+      hw_commands_[i] = cmd_rad;
+      hw_positions_[i] = cmd_rad;
+      hw_old_commands_[i] = cmd_rad;
+
+      sem_wait(sem_);
+      shared_registers_->register_table[i * 2] = 1;
+      shared_registers_->register_table[i * 2 + 1] = static_cast<uint16_t>(hw_commands_[i] * 1000);
+      register_header_->set_dirty(i * 2);
+      register_header_->set_dirty(i * 2 + 1);
+      sem_post(sem_);
+    }
   }
 
   if (!publish_actuators_ || !joint_publisher_) {
@@ -299,22 +359,14 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
   }
 
   // Firmware reads inputs->position.data[joint->config.virtual_pin] per configured joint.
-  sensor_msgs::msg::JointState msg;
-  msg.header.stamp = node_->get_clock()->now();
-  msg.name.clear();
-
 
   if (mappings_.empty()) {
-    joint_publisher_->publish(msg);
     return hardware_interface::return_type::OK;
   }
 
-  int max_vp = mappings_.back().virtual_pin;
-  msg.position.assign(static_cast<size_t>(max_vp) + 1U, 0.0);
-
   for (const auto & m : mappings_) {
-    shared_registers_->register_table[m.virtual_pin] = hw_commands_[m.joint_index];
-    msg.position[static_cast<size_t>(m.virtual_pin)] =
+
+    //msg.position[static_cast<size_t>(m.virtual_pin)] =
       actuator_command_to_servo_rad(m, hw_commands_[m.joint_index]);
   }
 
