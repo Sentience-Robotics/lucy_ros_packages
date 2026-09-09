@@ -14,7 +14,7 @@ boards:
     serial_id: ""
     board_class: internal_servo_only
     internal_servo_slots: 18
-    firmware_target: pico_micro_ros_left_arm
+    firmware_target: lucy_left_arm
     compile_definition: USE_LEFT_ARM
     topic_actuators: actuators/left_arm
     topic_sensors: sensors/left_arm
@@ -25,7 +25,7 @@ boards:
     serial_id: ""
     board_class: internal_servo_only
     internal_servo_slots: 18
-    firmware_target: pico_micro_ros_right_arm
+    firmware_target: lucy_right_arm
     compile_definition: USE_RIGHT_ARM
     topic_actuators: actuators/right_arm
     topic_sensors: sensors/right_arm
@@ -36,7 +36,7 @@ boards:
     serial_id: ""
     board_class: internal_servo_i2c_pwm
     internal_servo_slots: 18
-    firmware_target: pico_micro_ros_torso
+    firmware_target: lucy_torso
     compile_definition: USE_TORSO
     topic_actuators: actuators/torso
     topic_sensors: sensors/torso

@@ -1,0 +1,18 @@
+board_id: {{ board_id }}
+slave_address: {{ slave_address }}
+actuators:
+{% for a in actuators %}
+  - id: {{ a.id }}
+    enabled: {{ 'true' if a.enabled else 'false' }}
+    virtual_pin: {{ a.virtual_pin }}
+    hardware:
+      driver: PwmServoConfig
+    modbus:
+      adapter: PwmServoModbusAdapter
+    attributes:
+      min_pulse: {{ a.min_pulse }}
+      max_pulse: {{ a.max_pulse }}
+      min_angle: {{ a.min_angle }}
+      max_angle: {{ a.max_angle }}
+      default_angle: {{ a.default_angle }}
+{% endfor %}
