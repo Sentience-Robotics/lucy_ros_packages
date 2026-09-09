@@ -18,6 +18,8 @@ joint_state_broadcaster:
 
 left_arm_controller:
   ros__parameters:
+    # Position-only interfaces: open-loop interpolation (no velocity state).
+    open_loop_control: true
     allow_nonzero_velocity_at_trajectory_end: false
     joints:
       - left_a_joint
@@ -29,6 +31,8 @@ left_arm_controller:
 
 right_arm_controller:
   ros__parameters:
+    # Position-only interfaces: open-loop interpolation (no velocity state).
+    open_loop_control: true
     allow_nonzero_velocity_at_trajectory_end: false
     joints:
       - right_a_joint
@@ -39,6 +43,8 @@ right_arm_controller:
 
 torso_head_controller:
   ros__parameters:
+    # Position-only interfaces: open-loop interpolation (no velocity state).
+    open_loop_control: true
     allow_nonzero_velocity_at_trajectory_end: false
     joints:
       - left_shoulder_y_link_joint

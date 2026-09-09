@@ -108,13 +108,39 @@ def _default_robot_package():
     return ''
 
 
+def _load_robot_launch_defaults(robot_root: Path) -> dict[str, str]:
+    """Relative path defaults from ``config/control.launch.yaml`` when present."""
+    config_path = robot_root / 'config' / 'control.launch.yaml'
+    if not config_path.is_file():
+        return {}
+    try:
+        import yaml
+    except ImportError:
+        return {}
+    try:
+        data = yaml.safe_load(config_path.read_text(encoding='utf-8')) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, str] = {}
+    for key in ('urdf_path', 'base_path', 'controllers_yaml'):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            out[key] = value.strip()
+    return out
+
+
 def _resolve_robot_paths(context):
     """
     Fill urdf_path / base_path / controllers_yaml from the selected robot_package.
 
-    Lets ``robot_package:=<pkg>`` switch the URDF, base meshes and controllers
-    together. Explicit ``urdf_path`` / ``base_path`` / ``controllers_yaml``
-    overrides (non-empty) are left untouched.
+    Prefers ``config/control.launch.yaml`` in the robot package (relative paths
+    resolved against the package root). Falls back to the historical
+    ``description/urdf/inmoov.urdf.xacro`` layout when that file is absent.
+
+    Explicit ``urdf_path`` / ``base_path`` / ``controllers_yaml`` overrides
+    (non-empty) are left untouched.
     """
     from launch.actions import SetLaunchConfiguration
 
@@ -124,12 +150,27 @@ def _resolve_robot_paths(context):
         return []
     share = get_package_share_directory(robot_package)
     robot_root = _infer_robot_source_root(robot_package, share)
+    launch_defaults = _load_robot_launch_defaults(robot_root)
+
+    def _abs(rel_or_abs: str) -> str:
+        p = Path(rel_or_abs)
+        if p.is_absolute():
+            return str(p)
+        return str((robot_root / p).resolve())
+
+    urdf_rel = launch_defaults.get(
+        'urdf_path', 'description/urdf/inmoov.urdf.xacro'
+    )
+    base_rel = launch_defaults.get('base_path', 'description')
+    controllers_rel = launch_defaults.get(
+        'controllers_yaml', 'config/controllers.yaml'
+    )
 
     defaults = {
-        'urdf_path': str(robot_root / 'description' / 'urdf' / 'inmoov.urdf.xacro'),
+        'urdf_path': _abs(urdf_rel),
         # Goes into a file:// URI in the xacro, so it must be posix.
-        'base_path': (robot_root / 'description').as_posix(),
-        'controllers_yaml': str(robot_root / 'config' / 'controllers.yaml'),
+        'base_path': Path(_abs(base_rel)).as_posix(),
+        'controllers_yaml': _abs(controllers_rel),
     }
     actions = []
     for key, default_value in defaults.items():
@@ -301,8 +342,9 @@ def generate_launch_description():
         'urdf_path',
         default_value='',
         description=(
-            'URDF/xacro entry. Empty -> '
-            '<robot_package>/description/urdf/inmoov.urdf.xacro'
+            'Top-level robot xacro. Empty -> value from '
+            '<robot_package>/config/control.launch.yaml '
+            '(fallback: description/urdf/inmoov.urdf.xacro)'
         ),
     )
     base_path_arg = DeclareLaunchArgument(

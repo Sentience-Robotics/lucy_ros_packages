@@ -9,16 +9,23 @@ controller_manager:
       type: {{ c.type }}
 {% endfor %}
 
+{% if extra_joints %}
 joint_state_broadcaster:
   ros__parameters:
     extra_joints:
 {% for name in extra_joints %}
       - {{ name }}
 {% endfor %}
+{% else %}
+joint_state_broadcaster:
+  ros__parameters: {}
+{% endif %}
 
 {% for c in controllers %}
 {{ c.name }}:
   ros__parameters:
+    # Position-only interfaces: open-loop interpolation (no velocity state).
+    open_loop_control: true
     allow_nonzero_velocity_at_trajectory_end: false
     joints:
 {% for j in c.joints %}
