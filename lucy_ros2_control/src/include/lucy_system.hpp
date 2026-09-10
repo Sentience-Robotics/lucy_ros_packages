@@ -153,9 +153,9 @@ private:
   std::vector<double> hw_positions_;
 
   // Table containing the register values of every sensor and actuator
-  RegisterHeader* register_header_;
-  SharedRegisters* shared_registers_;
-  sem_t *sem_;
+  RegisterHeader* register_header_ = nullptr;
+  SharedRegisters* shared_registers_ = nullptr;
+  sem_t *sem_ = nullptr;
   std::string shared_registers_filename_ = "";
 
   // std::vector<double> hw_velocities_; // We have no velocity for our servos

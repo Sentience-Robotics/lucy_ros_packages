@@ -16,7 +16,9 @@
 #include "include/lucy_system.hpp"
 
 #include <format>
+#include <cerrno>
 #include <cmath>
+#include <cstring>
 #include <cstddef>
 #include <exception>
 #include <limits>
@@ -49,7 +51,7 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
     if (it != info_.hardware_parameters.end()) {
       node_name_ = it->second;
     } else {
-      node_name_ = "lucy_hardware_interface";
+      node_name_ = "lucy";
     }
 
 
@@ -196,30 +198,38 @@ hardware_interface::CallbackReturn LucySystemHardware::init_actuator_mappings()
 }
 
 hardware_interface::CallbackReturn LucySystemHardware::init_registers() {
+  const std::string reg_table_name = std::format("/{}.lucy_reg_table", node_name_);
+  const std::string reg_header_name = std::format("/{}.lucy_reg_header", node_name_);
+  const std::string sem_name = std::format("/{}", node_name_);
+
+  shm_unlink(reg_table_name.c_str());
+  shm_unlink(reg_header_name.c_str());
+
   { // REGISTER
-    int fd = shm_open(std::format("/{}.lucy_reg_table", node_name_).c_str(), O_CREAT | O_RDWR, 0666);
+    int fd = shm_open(reg_table_name.c_str(), O_CREAT | O_RDWR, 0666);
     if (fd == -1) {
       RCLCPP_FATAL(
-        get_logger(), "Failed to create shared memory space for register table (shm_open() failed).",
-        info_.name.c_str());
+        get_logger(), "Failed to create '%s' for register table (shm_open(): %s).",
+        reg_table_name.c_str(), std::strerror(errno));
       return hardware_interface::CallbackReturn::ERROR;
     }
 
     if (ftruncate(fd, sizeof(SharedRegisters)) == -1) {
       RCLCPP_FATAL(
-        get_logger(), "Failed to create shared memory space for register table (ftruncate() failed).",
-        info_.name.c_str());
+        get_logger(), "Failed to size '%s' for register table (ftruncate(): %s).",
+        reg_table_name.c_str(), std::strerror(errno));
+      close(fd);
       return hardware_interface::CallbackReturn::ERROR;
     }
 
     void* addr = mmap(nullptr, sizeof(SharedRegisters),
                       PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     close(fd); // fd not needed after mmap
-  
+
     if (addr == MAP_FAILED) {
       RCLCPP_FATAL(
-        get_logger(), "Failed to create shared memory space for register table (mmap() failed).",
-        info_.name.c_str());
+        get_logger(), "Failed to map '%s' for register table (mmap(): %s).",
+        reg_table_name.c_str(), std::strerror(errno));
       return hardware_interface::CallbackReturn::ERROR;
     }
 
@@ -227,38 +237,41 @@ hardware_interface::CallbackReturn LucySystemHardware::init_registers() {
   }
 
   { // REGISTER TABLE
-    int fd = shm_open(std::format("/{}.lucy_reg_header", node_name_).c_str(), O_CREAT | O_RDWR, 0666);
+    int fd = shm_open(reg_header_name.c_str(), O_CREAT | O_RDWR, 0666);
     if (fd == -1) {
       RCLCPP_FATAL(
-        get_logger(), "Failed to create shared memory space for register table (shm_open() failed).",
-        info_.name.c_str());
+        get_logger(), "Failed to create '%s' for register header (shm_open(): %s).",
+        reg_header_name.c_str(), std::strerror(errno));
       return hardware_interface::CallbackReturn::ERROR;
     }
 
     if (ftruncate(fd, sizeof(RegisterHeader)) == -1) {
       RCLCPP_FATAL(
-        get_logger(), "Failed to create shared memory space for register table (ftruncate() failed).",
-        info_.name.c_str());
+        get_logger(), "Failed to size '%s' for register header (ftruncate(): %s).",
+        reg_header_name.c_str(), std::strerror(errno));
+      close(fd);
       return hardware_interface::CallbackReturn::ERROR;
     }
 
     void* addr = mmap(nullptr, sizeof(RegisterHeader),
                       PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     close(fd); // fd not needed after mmap
-  
+
     if (addr == MAP_FAILED) {
       RCLCPP_FATAL(
-        get_logger(), "Failed to create shared memory space for register table (mmap() failed).", info_.name.c_str());
+        get_logger(), "Failed to map '%s' for register header (mmap(): %s).",
+        reg_header_name.c_str(), std::strerror(errno));
       return hardware_interface::CallbackReturn::ERROR;
     }
 
     register_header_ = static_cast<RegisterHeader*>(addr);
   }
 
-  sem_ = sem_open(std::format("/{}", node_name_).c_str(), O_CREAT, 0644, 1);
+  sem_ = sem_open(sem_name.c_str(), O_CREAT, 0644, 1);
   if (sem_ == SEM_FAILED) {
     RCLCPP_FATAL(
-        get_logger(), "Failed to create named sem.", info_.name.c_str());
+        get_logger(), "Failed to create named sem '%s' (sem_open(): %s).",
+        sem_name.c_str(), std::strerror(errno));
     return hardware_interface::CallbackReturn::ERROR;
   }
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -305,6 +318,17 @@ hardware_interface::CallbackReturn LucySystemHardware::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
   RCLCPP_INFO(get_logger(), "Successfully deactivated!");
+
+  if (shared_registers_ != nullptr) {
+    munmap(shared_registers_, sizeof(SharedRegisters));
+    shared_registers_ = nullptr;
+  }
+  if (register_header_ != nullptr) {
+    munmap(register_header_, sizeof(RegisterHeader));
+    register_header_ = nullptr;
+  }
+  shm_unlink(std::format("/{}.lucy_reg_table", node_name_).c_str());
+  shm_unlink(std::format("/{}.lucy_reg_header", node_name_).c_str());
 
   if (sem_ != SEM_FAILED && sem_ != nullptr) {
     sem_close(sem_);
