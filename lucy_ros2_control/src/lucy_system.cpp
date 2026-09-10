@@ -351,39 +351,62 @@ hardware_interface::return_type LucySystemHardware::read(
   return hardware_interface::return_type::OK;
 }
 
+namespace
+{
+uint16_t to_register_milliradians(double cmd_rad)
+{
+  double wire_rad = cmd_rad;
+  if (wire_rad < 0.0) {
+    wire_rad += 2.0 * M_PI;
+  }
+  const double milli = std::round(wire_rad * 1000.0);
+  if (!std::isfinite(milli) || milli <= 0.0) {
+    return 0;
+  }
+  constexpr double kMax = static_cast<double>(std::numeric_limits<uint16_t>::max());
+  return static_cast<uint16_t>(milli > kMax ? kMax : milli);
+}
+}  // namespace
+
 hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
   for (std::size_t i = 0; i < hw_commands_.size(); ++i) {
-    double cmd_rad = hw_commands_[i];
-    if (std::abs(hw_commands_[i] - hw_old_commands_[i]) > 0.001) {
-      if (cmd_rad < 0) {
-        cmd_rad += 2 * M_PI;
-      }
-      hw_commands_[i] = cmd_rad;
-      hw_positions_[i] = cmd_rad;
-      hw_old_commands_[i] = cmd_rad;
+    const double cmd_rad = lucy_ros2_control::clamp_position_command(
+      hw_commands_[i], joint_min_rad_[i], joint_max_rad_[i]);
+    hw_commands_[i] = cmd_rad;
+    hw_positions_[i] = cmd_rad;
+  }
 
-      sem_wait(sem_);
-      int reg = mappings_[i].virtual_pin;
-      switch (mappings_[i].type) {
-        case Type::PWM_SERVO:
-          shared_registers_->register_table[i * 2] = 1;
-          register_header_->set_dirty(i * 2);
-          shared_registers_->register_table[i * 2 + 1] = static_cast<uint16_t>(hw_commands_[i] * 1000);
-          register_header_->set_dirty(i * 2 + 1);
-          break;
-        case Type::BUS_SERVO:
-          shared_registers_->register_table[reg] = 1;
-          register_header_->set_dirty(reg);
-          shared_registers_->register_table[reg + 1] = mappings_[i].bus_id;
-          register_header_->set_dirty(reg + 1);
-          shared_registers_->register_table[reg + 2] = static_cast<uint16_t>(hw_commands_[i] * 1000);
-          register_header_->set_dirty(reg + 2);
-          break;
-      }
-      sem_post(sem_);
+  for (const auto & m : mappings_) {
+    const std::size_t i = m.joint_index;
+    const double cmd_rad = hw_commands_[i];
+    if (std::abs(cmd_rad - hw_old_commands_[i]) <= 0.001) {
+      continue;
     }
+    hw_old_commands_[i] = cmd_rad;
+
+    const uint16_t wire = to_register_milliradians(cmd_rad);
+    const int reg = m.virtual_pin;
+
+    sem_wait(sem_);
+    switch (m.type) {
+      case Type::PWM_SERVO:
+        shared_registers_->register_table[i * 2] = 1;
+        register_header_->set_dirty(i * 2);
+        shared_registers_->register_table[i * 2 + 1] = wire;
+        register_header_->set_dirty(i * 2 + 1);
+        break;
+      case Type::BUS_SERVO:
+        shared_registers_->register_table[reg] = 1;
+        register_header_->set_dirty(reg);
+        shared_registers_->register_table[reg + 1] = static_cast<uint16_t>(m.bus_id);
+        register_header_->set_dirty(reg + 1);
+        shared_registers_->register_table[reg + 2] = wire;
+        register_header_->set_dirty(reg + 2);
+        break;
+    }
+    sem_post(sem_);
   }
 
   if (!publish_actuators_ || !joint_publisher_) {
