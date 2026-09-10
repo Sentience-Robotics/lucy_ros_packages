@@ -128,8 +128,24 @@ std::optional<ActuatedJointMapping> build_actuated_joint_mapping(
   double min_rad,
   double max_rad)
 {
+  std::string it_type = joint.parameters.at("type");
+  Type type;
+  if (it_type == "pwm_servo") {
+    type = Type::PWM_SERVO;
+  } else if (it_type == "bus_servo") {
+    type = Type::BUS_SERVO;
+  } else {
+    return std::nullopt;
+  }
+
+
   const auto it_vpin = joint.parameters.find("virtual_pin");
   if (it_vpin == joint.parameters.end() || it_vpin->second.empty()) {
+    return std::nullopt;
+  }
+
+  const auto it_bus = joint.parameters.find("bus_id");
+  if ((it_bus == joint.parameters.end() || it_bus->second.empty()) && type == Type::BUS_SERVO) {
     return std::nullopt;
   }
 
@@ -141,6 +157,8 @@ std::optional<ActuatedJointMapping> build_actuated_joint_mapping(
     throw std::runtime_error(
             "invalid virtual_pin '" + it_vpin->second + "' for joint '" + joint.name + "'");
   }
+  m.bus_id = std::stoi(it_bus->second, nullptr, 10);
+  m.type = type;
   m.offset_deg = parse_required_double(joint, "offset_deg");
   m.direction = parse_required_double(joint, "direction");
   m.scale = parse_required_double(joint, "scale");

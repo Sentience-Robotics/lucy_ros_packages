@@ -192,14 +192,6 @@ hardware_interface::CallbackReturn LucySystemHardware::init_actuator_mappings()
     hw_positions_[i] = hw_commands_[i];
   }
 
-  const std::optional<int> duplicate = sort_and_find_duplicate_virtual_pin(mappings_);
-  if (duplicate.has_value()) {
-    RCLCPP_FATAL(
-      get_logger(), "Duplicate virtual_pin %d in hardware '%s'.", duplicate.value(),
-      info_.name.c_str());
-    return hardware_interface::CallbackReturn::ERROR;
-  }
-
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -339,17 +331,33 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
   for (std::size_t i = 0; i < hw_commands_.size(); ++i) {
-    const double cmd_rad = hw_commands_[i];
+    double cmd_rad = hw_commands_[i];
     if (std::abs(hw_commands_[i] - hw_old_commands_[i]) > 0.001) {
+      if (cmd_rad < 0) {
+        cmd_rad += 2 * M_PI;
+      }
       hw_commands_[i] = cmd_rad;
       hw_positions_[i] = cmd_rad;
       hw_old_commands_[i] = cmd_rad;
 
       sem_wait(sem_);
-      shared_registers_->register_table[i * 2] = 1;
-      shared_registers_->register_table[i * 2 + 1] = static_cast<uint16_t>(hw_commands_[i] * 1000);
-      register_header_->set_dirty(i * 2);
-      register_header_->set_dirty(i * 2 + 1);
+      int reg = mappings_[i].virtual_pin;
+      switch (mappings_[i].type) {
+        case Type::PWM_SERVO:
+          shared_registers_->register_table[i * 2] = 1;
+          register_header_->set_dirty(i * 2);
+          shared_registers_->register_table[i * 2 + 1] = static_cast<uint16_t>(hw_commands_[i] * 1000);
+          register_header_->set_dirty(i * 2 + 1);
+          break;
+        case Type::BUS_SERVO:
+          shared_registers_->register_table[reg] = 1;
+          register_header_->set_dirty(reg);
+          shared_registers_->register_table[reg + 1] = mappings_[i].bus_id;
+          register_header_->set_dirty(reg + 1);
+          shared_registers_->register_table[reg + 2] = static_cast<uint16_t>(hw_commands_[i] * 1000);
+          register_header_->set_dirty(reg + 2);
+          break;
+      }
       sem_post(sem_);
     }
   }

@@ -126,7 +126,7 @@ def _resolve_robot_paths(context):
     robot_root = _infer_robot_source_root(robot_package, share)
 
     defaults = {
-        'urdf_path': str(robot_root / 'description' / 'urdf' / 'inmoov.urdf.xacro'),
+        'urdf_path': str(robot_root / 'description' / 'urdf' / 'robot.urdf.xacro'),
         # Goes into a file:// URI in the xacro, so it must be posix.
         'base_path': (robot_root / 'description').as_posix(),
         'controllers_yaml': str(robot_root / 'config' / 'controllers.yaml'),
@@ -443,8 +443,8 @@ def generate_launch_description():
             LogInfo(msg='========================================'),
             web_ros_api_launch,
             real_hardware,
-            ros2_control_launch,
             robot_state_publisher,
+            ros2_control_launch,
             rviz,
             gazebo,
             LogInfo(msg='========================================'),
