@@ -379,6 +379,7 @@ def generate_launch_description():
     robot_description_dict = {'robot_description': robot_description}
 
     robot_state_publisher = Node(
+        condition=IfCondition(LaunchConfiguration('gazebo')),
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
