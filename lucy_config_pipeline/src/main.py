@@ -12,6 +12,7 @@ from lucy_config_generator.schema import resolve_generated_files
 from .config_store import ConfigStore
 from .pipeline.action_server import PipelineActionServer
 from .pipeline.models import PipelinePaths
+from .robot_paths import resolve_robot_description_paths
 from .services.config_services_node import ConfigServicesNode
 
 
@@ -53,9 +54,10 @@ def _resolve_paths(robot_package: str, config_dir: str) -> PipelinePaths:
 
     cfg_dir = Path(config_dir).resolve() if config_dir else (robot_root / 'config' / 'hardware')
     names = _active_generated_files(cfg_dir)
-    urdf_xacro = robot_root / 'description' / 'urdf' / 'inmoov.urdf.xacro'
-    base_path = robot_root / 'description'
-    controller_config = robot_root / 'config' / names['controllers_yaml']
+    urdf_xacro, base_path, controller_config = resolve_robot_description_paths(
+        robot_root,
+        controllers_basename=names['controllers_yaml'],
+    )
 
     return PipelinePaths(
         config_dir=cfg_dir,

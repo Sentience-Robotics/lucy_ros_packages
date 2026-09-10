@@ -65,7 +65,8 @@ def generate_launch_description():
             ]
         ),
         launch_arguments=[
-            ('default_call_service_timeout', '5.0'),
+            ('default_call_service_timeout', '60.0'),
+            ('max_message_size', '50000000'),
             ('call_services_in_new_thread', 'true'),
             ('send_action_goals_in_new_thread', 'true'),
         ],
