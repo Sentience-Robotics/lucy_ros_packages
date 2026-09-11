@@ -60,8 +60,13 @@
 namespace lucy_ros2_control
 {
 
+// Byte-for-byte mirror of the bridge's `#[repr(C)] RegisterHeader`
+// (lucy_embedded_firmware/firmwares/sim/src/main.rs): one dirty bit per
+// register, MSB-first inside each byte. A wider element type here puts every
+// register from 8 upwards on a different byte than the bridge reads.
 struct RegisterHeader {
     uint8_t header[32];
+    uint16_t iterator;
 
     bool get_register_status(uint16_t reg) {
         uint16_t index = reg / 8;
@@ -72,7 +77,7 @@ struct RegisterHeader {
     void switch_register_status(uint16_t reg) {
         uint16_t index = reg / 8;
         uint16_t index2 = reg % 8;
-        header[index] = header[index] ^ ((1 & 0xFF) << (7 - index2));
+        header[index] = static_cast<uint8_t>(header[index] ^ (1u << (7 - index2)));
     }
 
     void set_dirty(uint16_t reg) {
@@ -94,6 +99,18 @@ struct RegisterHeader {
 struct SharedRegisters {
   uint16_t register_table[256];
 };
+
+// Bus-servo register block layout. The bridge forwards dirty registers in
+// ascending index order and the firmware consumes `cmd` and clears it inside
+// the same tick, so the opcode must sit above its operands.
+constexpr int kBusServoIdOffset = 0;
+constexpr int kBusServoAngleOffset = 1;
+constexpr int kBusServoCmdOffset = 2;
+constexpr int kBusServoRegisterCount = 3;
+
+// Firmware bus-servo opcodes (BusServoModbusAdapter::tick).
+constexpr uint16_t kBusServoCmdMove = 1;
+constexpr uint16_t kBusServoCmdEnableTorque = 3;
 
 
 class LucySystemHardware : public hardware_interface::SystemInterface
@@ -166,6 +183,11 @@ private:
   std::vector<double> joint_max_rad_;
 
   bool publish_actuators_{true};
+
+  /// When non-zero, only this bus id is driven; set from LUCY_BUS_SERVO_ID.
+  /// The rp2040 firmware exposes a single bus-servo adapter at register 0, so
+  /// every bus joint currently shares one register block.
+  int active_bus_id_{0};
 
   std::vector<ActuatedJointMapping> mappings_;
 };

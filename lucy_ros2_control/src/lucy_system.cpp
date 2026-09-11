@@ -18,6 +18,7 @@
 #include <format>
 #include <cerrno>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <cstddef>
 #include <exception>
@@ -55,6 +56,23 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
     }
 
 
+  }
+
+  // Bring-up escape hatch: the firmware has a single bus-servo adapter and the
+  // generated xacro gives every bus joint virtual_pin 0, so all of them target
+  // the same register block. Restrict output to one id until that is fixed.
+  if (const char * raw = std::getenv("LUCY_BUS_SERVO_ID")) {
+    try {
+      active_bus_id_ = std::stoi(raw);
+    } catch (const std::exception &) {
+      RCLCPP_FATAL(get_logger(), "LUCY_BUS_SERVO_ID='%s' is not an integer.", raw);
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+    RCLCPP_WARN(
+      get_logger(),
+      "LUCY_BUS_SERVO_ID=%d: only that bus servo will be driven; every other "
+      "bus joint is held back.",
+      active_bus_id_);
   }
     // resizing command and state vectors
   hw_positions_.resize(info_.joints.size(), 0);
@@ -194,6 +212,15 @@ hardware_interface::CallbackReturn LucySystemHardware::init_actuator_mappings()
     hw_positions_[i] = hw_commands_[i];
   }
 
+  if (const auto duplicate = sort_and_find_duplicate_virtual_pin(mappings_)) {
+    RCLCPP_WARN(
+      get_logger(),
+      "virtual_pin %d is shared by several joints: they overwrite each other's "
+      "registers every cycle. Set LUCY_BUS_SERVO_ID to drive one servo, or give "
+      "each joint its own register block.",
+      duplicate.value());
+  }
+
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -309,6 +336,26 @@ In our case, the hardware is already ready to receive informations
 hardware_interface::CallbackReturn LucySystemHardware::on_activate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
+  // Nothing else issues the torque-enable opcode, so a servo left with torque
+  // off would accept target positions and never move.
+  for (const auto & m : mappings_) {
+    if (m.type != Type::BUS_SERVO) {
+      continue;
+    }
+    if (active_bus_id_ != 0 && m.bus_id != active_bus_id_) {
+      continue;
+    }
+    const int reg = m.virtual_pin;
+    sem_wait(sem_);
+    shared_registers_->register_table[reg + kBusServoIdOffset] =
+      static_cast<uint16_t>(m.bus_id);
+    register_header_->set_dirty(reg + kBusServoIdOffset);
+    shared_registers_->register_table[reg + kBusServoCmdOffset] = kBusServoCmdEnableTorque;
+    register_header_->set_dirty(reg + kBusServoCmdOffset);
+    sem_post(sem_);
+    RCLCPP_INFO(get_logger(), "Enabling torque on bus servo id %d.", m.bus_id);
+  }
+
   RCLCPP_INFO(get_logger(), "Successfully activated!");
 
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -379,6 +426,10 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
   }
 
   for (const auto & m : mappings_) {
+    if (m.type == Type::BUS_SERVO && active_bus_id_ != 0 && m.bus_id != active_bus_id_) {
+      continue;
+    }
+
     const std::size_t i = m.joint_index;
     const double cmd_rad = hw_commands_[i];
     if (std::abs(cmd_rad - hw_old_commands_[i]) <= 0.001) {
@@ -386,24 +437,32 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
     }
     hw_old_commands_[i] = cmd_rad;
 
-    const uint16_t wire = to_register_milliradians(cmd_rad);
+    // Joint space -> servo space: applies offset_deg / direction / scale and
+    // clamps to [servo_min_deg, servo_max_deg]. Sending the raw joint angle
+    // skips the mechanical envelope and wraps negative commands to ~2*pi.
+    const uint16_t wire = to_register_milliradians(actuator_command_to_servo_rad(m, cmd_rad));
     const int reg = m.virtual_pin;
 
     sem_wait(sem_);
     switch (m.type) {
       case Type::PWM_SERVO:
-        shared_registers_->register_table[reg] = 1;
-        register_header_->set_dirty(reg);
+        // Angle first, opcode last: same ordering rule as the bus block below.
         shared_registers_->register_table[reg + 1] = wire;
         register_header_->set_dirty(reg + 1);
-        break;
-      case Type::BUS_SERVO:
         shared_registers_->register_table[reg] = 1;
         register_header_->set_dirty(reg);
-        shared_registers_->register_table[reg + 1] = static_cast<uint16_t>(m.bus_id);
-        register_header_->set_dirty(reg + 1);
-        shared_registers_->register_table[reg + 2] = wire;
-        register_header_->set_dirty(reg + 2);
+        break;
+      case Type::BUS_SERVO:
+        // Operands first, opcode last: the bridge ships dirty registers in
+        // ascending index order and the firmware clears cmd in the tick that
+        // consumes it, so a cmd sent first fires on the previous id/angle.
+        shared_registers_->register_table[reg + kBusServoIdOffset] =
+          static_cast<uint16_t>(m.bus_id);
+        register_header_->set_dirty(reg + kBusServoIdOffset);
+        shared_registers_->register_table[reg + kBusServoAngleOffset] = wire;
+        register_header_->set_dirty(reg + kBusServoAngleOffset);
+        shared_registers_->register_table[reg + kBusServoCmdOffset] = kBusServoCmdMove;
+        register_header_->set_dirty(reg + kBusServoCmdOffset);
         break;
     }
     sem_post(sem_);
