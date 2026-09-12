@@ -118,6 +118,8 @@ class LucySystemHardware : public hardware_interface::SystemInterface
 public:
   RCLCPP_SHARED_PTR_DEFINITIONS(LucySystemHardware)
 
+  ~LucySystemHardware();
+
   hardware_interface::CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams & params) override;
 
@@ -156,6 +158,9 @@ private:
   /// Initialising sensors / actuators registers in shared memory
   hardware_interface::CallbackReturn init_registers();
 
+  /// Unmap the register objects and drop their shm / semaphore names. Idempotent.
+  void release_registers();
+
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_publisher_;
   rclcpp::Node::SharedPtr node_;
 
@@ -170,11 +175,24 @@ private:
   std::vector<double> hw_commands_;
   std::vector<double> hw_positions_;
 
-  // Table containing the register values of every sensor and actuator
+  // Table containing the register values of every sensor and actuator.
+  // One set of objects per hardware component: virtual_pin restarts at 0 in
+  // every <ros2_control> block, so a shared table would alias the left arm's
+  // pin N onto the right arm's pin N.
   RegisterHeader* register_header_ = nullptr;
   SharedRegisters* shared_registers_ = nullptr;
   sem_t *sem_ = nullptr;
-  std::string shared_registers_filename_ = "";
+
+  /// node_name_ sanitised and capped to what shm_open() accepts; the name the
+  /// firmware bridge must be given to attach to this component.
+  std::string shm_node_name_;
+
+  // Names of the objects this component actually created. Set only once the
+  // object exists, so every failure path and the destructor unlink exactly
+  // what was created and nothing a peer owns.
+  std::string reg_table_name_;
+  std::string reg_header_name_;
+  std::string sem_name_;
 
   // std::vector<double> hw_velocities_; // We have no velocity for our servos
 
