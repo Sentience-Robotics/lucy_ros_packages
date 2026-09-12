@@ -36,6 +36,11 @@
 namespace lucy_ros2_control
 {
 
+enum class Type {
+  PWM_SERVO,
+  BUS_SERVO
+};
+
 /// Convert radians to degrees.
 double rad_to_deg(double rad);
 
@@ -53,7 +58,9 @@ struct JointLimits
 struct ActuatedJointMapping
 {
   std::size_t joint_index{0};
+  Type type{0};
   int virtual_pin{0};
+  int bus_id{0};
   double offset_deg{0.0};
   double direction{1.0};
   double scale{1.0};

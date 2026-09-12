@@ -287,17 +287,35 @@ def _gazebo_sensors(data: dict[str, Any]) -> list[dict[str, Any]]:
     return sensors
 
 
-def _extra_joints(data: dict[str, Any], urdf_joints: set[str]) -> list[str]:
+def _extra_joints(
+    data: dict[str, Any],
+    urdf_joints: set[str],
+    mimic_joints: set[str] | None = None,
+) -> list[str]:
     """
     Joints published at default via broadcaster, not listed on Lucy hardware blocks.
 
     Every actuator (enabled or not) is exported under ``ros2_control`` and trajectory
     controllers; only **non-actuator** URDF joints (passive / unmapped) need
     ``extra_joints`` so ``joint_state_broadcaster`` can publish them for TF.
+
+    ``<mimic>`` joints are excluded: ``robot_state_publisher`` derives their position
+    from the joint they follow, but only for names absent from ``/joint_states``
+    (it inserts, it does not overwrite). Publishing them here at 0.0 would pin them.
     """
     actuated = {a['urdf_joint'] for a in data['actuators']}
-    extra = sorted(urdf_joints - actuated)
+    extra = sorted(urdf_joints - actuated - (mimic_joints or set()))
     return extra
+
+
+def _mimic_joint_names(urdf_xml: str) -> set[str]:
+    """Names of joints carrying a ``<mimic>`` tag (position slaved to another joint)."""
+    root = ET.fromstring(urdf_xml)
+    return {
+        j.attrib['name']
+        for j in root.findall('joint')
+        if 'name' in j.attrib and j.find('mimic') is not None
+    }
 
 
 def _firmware_template_for_board_class(board_class: str) -> str:
@@ -439,7 +457,7 @@ def generate(
 
     extra: list[str] = []
     if targets & {'controllers', 'all'}:
-        extra = _extra_joints(data, urdf_names)
+        extra = _extra_joints(data, urdf_names, _mimic_joint_names(urdf_xml))
 
     env = _jinja_env()
 
@@ -493,7 +511,7 @@ def generate_from_xacro_string_for_tests(
         board_ids = _resolve_board_ids(data, boards_filter)
         firmware_boards = board_ids
     urdf_names, urdf_limits = _parse_urdf_joints_xml(urdf_xml)
-    extra = _extra_joints(data, urdf_names)
+    extra = _extra_joints(data, urdf_names, _mimic_joint_names(urdf_xml))
     names = resolve_generated_files(data)
     env = _jinja_env()
     out: dict[str, str] = {}

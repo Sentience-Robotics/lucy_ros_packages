@@ -26,8 +26,19 @@
 
 #include <memory>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
+#include <array>
+
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <semaphore.h>
+#include <stdio.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
 
 #include "hardware_interface/handle.hpp"
 #include "hardware_interface/hardware_info.hpp"
@@ -48,10 +59,66 @@
 
 namespace lucy_ros2_control
 {
+
+// Byte-for-byte mirror of the bridge's `#[repr(C)] RegisterHeader`
+// (lucy_embedded_firmware/firmwares/sim/src/main.rs): one dirty bit per
+// register, MSB-first inside each byte. A wider element type here puts every
+// register from 8 upwards on a different byte than the bridge reads.
+struct RegisterHeader {
+    uint8_t header[32];
+    uint16_t iterator;
+
+    bool get_register_status(uint16_t reg) {
+        uint16_t index = reg / 8;
+        uint16_t index2 = reg % 8;
+        return ((header[index] >> (7 - index2)) & 0b1) != 0;
+    }
+
+    void switch_register_status(uint16_t reg) {
+        uint16_t index = reg / 8;
+        uint16_t index2 = reg % 8;
+        header[index] = static_cast<uint8_t>(header[index] ^ (1u << (7 - index2)));
+    }
+
+    void set_dirty(uint16_t reg) {
+
+        if (get_register_status(reg)) {
+            return;
+        }
+        switch_register_status(reg);
+    }
+
+    void set_clean(uint16_t reg) {
+        if (!get_register_status(reg)) {
+            return;
+        }
+        switch_register_status(reg);
+    }
+};
+
+struct SharedRegisters {
+  uint16_t register_table[256];
+};
+
+// Bus-servo register block layout. The bridge forwards dirty registers in
+// ascending index order and the firmware consumes `cmd` and clears it inside
+// the same tick, so the opcode must sit above its operands.
+constexpr int kBusServoIdOffset = 0;
+constexpr int kBusServoAngleOffset = 1;
+constexpr int kBusServoCmdOffset = 2;
+constexpr int kBusServoRegisterCount = 3;
+
+// Firmware bus-servo opcodes (BusServoModbusAdapter::tick).
+constexpr uint16_t kBusServoCmdMove = 1;
+constexpr uint16_t kBusServoCmdEnableTorque = 3;
+
+
 class LucySystemHardware : public hardware_interface::SystemInterface
 {
 public:
   RCLCPP_SHARED_PTR_DEFINITIONS(LucySystemHardware)
+
+  ~LucySystemHardware();
 
   hardware_interface::CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams & params) override;
@@ -88,16 +155,45 @@ private:
   /// Build mappings_, seed default positions, sort and reject duplicate pins.
   hardware_interface::CallbackReturn init_actuator_mappings();
 
+  /// Initialising sensors / actuators registers in shared memory
+  hardware_interface::CallbackReturn init_registers();
+
+  /// Unmap the register objects and drop their shm / semaphore names. Idempotent.
+  void release_registers();
+
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_publisher_;
   rclcpp::Node::SharedPtr node_;
+
+  std::string node_name_;
 
   // Objects for logging
   std::shared_ptr<rclcpp::Logger> logger_;
   // rclcpp::Clock::SharedPtr clock_;
 
   // Store the command for the simulated robot
+  std::vector<double> hw_old_commands_;
   std::vector<double> hw_commands_;
   std::vector<double> hw_positions_;
+
+  // Table containing the register values of every sensor and actuator.
+  // One set of objects per hardware component: virtual_pin restarts at 0 in
+  // every <ros2_control> block, so a shared table would alias the left arm's
+  // pin N onto the right arm's pin N.
+  RegisterHeader* register_header_ = nullptr;
+  SharedRegisters* shared_registers_ = nullptr;
+  sem_t *sem_ = nullptr;
+
+  /// node_name_ sanitised and capped to what shm_open() accepts; the name the
+  /// firmware bridge must be given to attach to this component.
+  std::string shm_node_name_;
+
+  // Names of the objects this component actually created. Set only once the
+  // object exists, so every failure path and the destructor unlink exactly
+  // what was created and nothing a peer owns.
+  std::string reg_table_name_;
+  std::string reg_header_name_;
+  std::string sem_name_;
+
   // std::vector<double> hw_velocities_; // We have no velocity for our servos
 
   /** Per-joint URDF limits from command_interface min/max (rad); ±inf when unset. */
@@ -105,6 +201,11 @@ private:
   std::vector<double> joint_max_rad_;
 
   bool publish_actuators_{true};
+
+  /// When non-zero, only this bus id is driven; set from LUCY_BUS_SERVO_ID.
+  /// The rp2040 firmware exposes a single bus-servo adapter at register 0, so
+  /// every bus joint currently shares one register block.
+  int active_bus_id_{0};
 
   std::vector<ActuatedJointMapping> mappings_;
 };

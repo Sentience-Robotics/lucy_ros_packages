@@ -159,7 +159,7 @@ def _resolve_robot_paths(context):
         return str((robot_root / p).resolve())
 
     urdf_rel = launch_defaults.get(
-        'urdf_path', 'description/urdf/inmoov.urdf.xacro'
+        'urdf_path', 'description/urdf/robot.urdf.xacro'
     )
     base_rel = launch_defaults.get('base_path', 'description')
     controllers_rel = launch_defaults.get(
@@ -204,73 +204,33 @@ def _validate_lucy_launch(context):
     return []
 
 
-def create_micro_ros_nodes(device0: str, device1: str):
-    """Create micro-ROS agent nodes for left and right arms (device paths resolved)."""
-    return [
-        Node(
-            package='micro_ros_agent',
-            executable='micro_ros_agent',
-            name='micro_ros_agent_right',
-            arguments=['serial', '--dev', device0],
-            output='screen',
-            respawn=True,
-            respawn_delay=2.0,
-            emulate_tty=True,
-        ),
-        Node(
-            package='micro_ros_agent',
-            executable='micro_ros_agent',
-            name='micro_ros_agent_left',
-            arguments=['serial', '--dev', device1],
-            output='screen',
-            respawn=True,
-            respawn_delay=2.0,
-            emulate_tty=True,
-        ),
-    ]
-
-
 def _real_hardware_stack(context, *args, **kwargs):
     """Build micro-ROS / camera / RealSense only when ``real`` is true (lazy package load)."""
     real = LaunchConfiguration('real').perform(context).lower().strip()
     if real not in ('true', '1', 'yes'):
         return []
-    device0 = LaunchConfiguration('device0').perform(context)
-    device1 = LaunchConfiguration('device1').perform(context)
-    out = list(create_micro_ros_nodes(device0, device1))
+    out = list()
     cam_share = get_package_share_directory('camera_ros')
-    out.append(
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(cam_share, 'launch', 'camera.launch.py')
-            ),
-        )
-    )
-    lucy_share = get_package_share_directory('lucy_bringup')
-    out.append(
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(lucy_share, 'launch', 'realsense.launch.py')
-            ),
-        )
-    )
+    # out.append(
+    #     IncludeLaunchDescription(
+    #         PythonLaunchDescriptionSource(
+    #             os.path.join(cam_share, 'launch', 'camera.launch.py')
+    #         ),
+    #     )
+    # )
+    # lucy_share = get_package_share_directory('lucy_bringup')
+    # out.append(
+    #     IncludeLaunchDescription(
+    #         PythonLaunchDescriptionSource(
+    #             os.path.join(lucy_share, 'launch', 'realsense.launch.py')
+    #         ),
+    #     )
+    # )
     return out
 
 
 def generate_launch_description():
     """Generate launch description for Lucy robot system."""
-    device0_arg = DeclareLaunchArgument(
-        'device0',
-        default_value='/dev/ttyACM0',
-        description='Serial device for first micro-ROS agent (right arm)',
-    )
-
-    device1_arg = DeclareLaunchArgument(
-        'device1',
-        default_value='/dev/ttyACM1',
-        description='Serial device for second micro-ROS agent (left arm)',
-    )
-
     audio_sample_rate_arg = DeclareLaunchArgument(
         'audio_sample_rate',
         default_value='48000',
@@ -344,7 +304,7 @@ def generate_launch_description():
         description=(
             'Top-level robot xacro. Empty -> value from '
             '<robot_package>/config/control.launch.yaml '
-            '(fallback: description/urdf/inmoov.urdf.xacro)'
+            '(fallback: description/urdf/robot.urdf.xacro)'
         ),
     )
     base_path_arg = DeclareLaunchArgument(
@@ -419,6 +379,7 @@ def generate_launch_description():
     robot_description_dict = {'robot_description': robot_description}
 
     robot_state_publisher = Node(
+        condition=IfCondition(LaunchConfiguration('gazebo')),
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
@@ -427,7 +388,6 @@ def generate_launch_description():
             robot_description_dict,
             {'use_sim_time': LaunchConfiguration('gazebo')},
         ],
-        condition=IfCondition(LaunchConfiguration('gazebo')),
     )
 
     real_hardware = OpaqueFunction(function=_real_hardware_stack)
@@ -507,8 +467,6 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            device0_arg,
-            device1_arg,
             audio_sample_rate_arg,
             audio_capture_device_arg,
             audio_playback_device_arg,
@@ -528,8 +486,8 @@ def generate_launch_description():
             LogInfo(msg='========================================'),
             web_ros_api_launch,
             real_hardware,
-            ros2_control_launch,
             robot_state_publisher,
+            ros2_control_launch,
             rviz,
             gazebo,
             LogInfo(msg='========================================'),
