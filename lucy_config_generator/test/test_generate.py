@@ -227,6 +227,26 @@ def test_golden_controllers_extra_joints():
     assert got == expected
 
 
+def test_mimic_joints_excluded_from_extra_joints():
+    """A <mimic> joint is derived by robot_state_publisher, not broadcast at 0.0."""
+    data = _load_mapping()
+    mimic_joint = (
+        '  <joint name="passive_mimic_joint" type="revolute">\n'
+        '    <parent link="a"/>\n'
+        '    <child link="b"/>\n'
+        '    <axis xyz="0 0 1"/>\n'
+        '    <limit effort="1" lower="0" upper="1" velocity="1"/>\n'
+        '    <mimic joint="left_a_joint" multiplier="1.0" offset="0.0"/>\n'
+        '  </joint>\n'
+    )
+    urdf = _fixture_urdf_xml().replace('</robot>', mimic_joint + '</robot>')
+    got = generate_from_xacro_string_for_tests(data, urdf, {'controllers'}, None)[
+        GENERATED_FILES_DEFAULTS['controllers_yaml']
+    ]
+    assert 'passive_mimic_joint' not in got
+    assert '- passive_extra_joint' in got
+
+
 def test_boards_filter_emits_subset():
     data = _load_mapping()
     got = generate_from_xacro_string_for_tests(
