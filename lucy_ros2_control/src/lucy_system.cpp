@@ -392,10 +392,10 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
     sem_wait(sem_);
     switch (m.type) {
       case Type::PWM_SERVO:
-        shared_registers_->register_table[i * 2] = 1;
-        register_header_->set_dirty(i * 2);
-        shared_registers_->register_table[i * 2 + 1] = wire;
-        register_header_->set_dirty(i * 2 + 1);
+        shared_registers_->register_table[reg] = 1;
+        register_header_->set_dirty(reg);
+        shared_registers_->register_table[reg + 1] = wire;
+        register_header_->set_dirty(reg + 1);
         break;
       case Type::BUS_SERVO:
         shared_registers_->register_table[reg] = 1;

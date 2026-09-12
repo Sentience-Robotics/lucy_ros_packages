@@ -61,7 +61,7 @@ namespace lucy_ros2_control
 {
 
 struct RegisterHeader {
-    uint32_t header[32];
+    uint8_t header[32];
 
     bool get_register_status(uint16_t reg) {
         uint16_t index = reg / 8;
@@ -76,6 +76,7 @@ struct RegisterHeader {
     }
 
     void set_dirty(uint16_t reg) {
+
         if (get_register_status(reg)) {
             return;
         }

@@ -139,8 +139,6 @@ std::optional<ActuatedJointMapping> build_actuated_joint_mapping(
       type = Type::PWM_SERVO;
     } else if (it_type->second == "bus_servo") {
       type = Type::BUS_SERVO;
-    } else {
-      return std::nullopt;
     }
   }
 

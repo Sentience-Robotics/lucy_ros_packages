@@ -159,7 +159,7 @@ def _resolve_robot_paths(context):
         return str((robot_root / p).resolve())
 
     urdf_rel = launch_defaults.get(
-        'urdf_path', 'description/urdf/inmoov.urdf.xacro'
+        'urdf_path', 'description/urdf/robot.urdf.xacro'
     )
     base_rel = launch_defaults.get('base_path', 'description')
     controllers_rel = launch_defaults.get(
@@ -304,7 +304,7 @@ def generate_launch_description():
         description=(
             'Top-level robot xacro. Empty -> value from '
             '<robot_package>/config/control.launch.yaml '
-            '(fallback: description/urdf/inmoov.urdf.xacro)'
+            '(fallback: description/urdf/robot.urdf.xacro)'
         ),
     )
     base_path_arg = DeclareLaunchArgument(

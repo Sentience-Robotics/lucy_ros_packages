@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 # Historical InMoov/Thais layout used when control.launch.yaml is absent.
-_DEFAULT_URDF_REL = 'description/urdf/inmoov.urdf.xacro'
+_DEFAULT_URDF_REL = 'description/urdf/robot.urdf.xacro'
 _DEFAULT_BASE_REL = 'description'
 _DEFAULT_CONTROLLERS_REL = 'config/controllers.yaml'
 
