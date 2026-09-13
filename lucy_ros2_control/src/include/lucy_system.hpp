@@ -64,39 +64,45 @@ namespace lucy_ros2_control
 // (lucy_embedded_firmware/firmwares/sim/src/main.rs): one dirty bit per
 // register, MSB-first inside each byte. A wider element type here puts every
 // register from 8 upwards on a different byte than the bridge reads.
-struct RegisterHeader {
-    uint8_t header[32];
-    uint16_t iterator;
+struct RegisterHeader
+{
+  uint8_t header[32];
+  uint16_t iterator;
 
-    bool get_register_status(uint16_t reg) {
-        uint16_t index = reg / 8;
-        uint16_t index2 = reg % 8;
-        return ((header[index] >> (7 - index2)) & 0b1) != 0;
+  bool get_register_status(uint16_t reg)
+  {
+    uint16_t index = reg / 8;
+    uint16_t index2 = reg % 8;
+    return ((header[index] >> (7 - index2)) & 0b1) != 0;
+  }
+
+  void switch_register_status(uint16_t reg)
+  {
+    uint16_t index = reg / 8;
+    uint16_t index2 = reg % 8;
+    header[index] = static_cast<uint8_t>(header[index] ^ (1u << (7 - index2)));
+  }
+
+  void set_dirty(uint16_t reg)
+  {
+
+    if (get_register_status(reg)) {
+      return;
     }
+    switch_register_status(reg);
+  }
 
-    void switch_register_status(uint16_t reg) {
-        uint16_t index = reg / 8;
-        uint16_t index2 = reg % 8;
-        header[index] = static_cast<uint8_t>(header[index] ^ (1u << (7 - index2)));
+  void set_clean(uint16_t reg)
+  {
+    if (!get_register_status(reg)) {
+      return;
     }
-
-    void set_dirty(uint16_t reg) {
-
-        if (get_register_status(reg)) {
-            return;
-        }
-        switch_register_status(reg);
-    }
-
-    void set_clean(uint16_t reg) {
-        if (!get_register_status(reg)) {
-            return;
-        }
-        switch_register_status(reg);
-    }
+    switch_register_status(reg);
+  }
 };
 
-struct SharedRegisters {
+struct SharedRegisters
+{
   uint16_t register_table[256];
 };
 
@@ -179,9 +185,9 @@ private:
   // One set of objects per hardware component: virtual_pin restarts at 0 in
   // every <ros2_control> block, so a shared table would alias the left arm's
   // pin N onto the right arm's pin N.
-  RegisterHeader* register_header_ = nullptr;
-  SharedRegisters* shared_registers_ = nullptr;
-  sem_t *sem_ = nullptr;
+  RegisterHeader * register_header_ = nullptr;
+  SharedRegisters * shared_registers_ = nullptr;
+  sem_t * sem_ = nullptr;
 
   /// node_name_ sanitised and capped to what shm_open() accepts; the name the
   /// firmware bridge must be given to attach to this component.

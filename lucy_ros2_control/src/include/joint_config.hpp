@@ -36,7 +36,8 @@
 namespace lucy_ros2_control
 {
 
-enum class Type {
+enum class Type
+{
   PWM_SERVO,
   BUS_SERVO
 };

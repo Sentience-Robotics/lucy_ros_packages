@@ -192,7 +192,7 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
       "bus joint is held back.",
       active_bus_id_);
   }
-    // resizing command and state vectors
+  // resizing command and state vectors
   hw_positions_.resize(info_.joints.size(), 0);
   // hw_velocities_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN()); // no velocities for our servos
   hw_commands_.resize(info_.joints.size(), 0);
@@ -342,7 +342,8 @@ hardware_interface::CallbackReturn LucySystemHardware::init_actuator_mappings()
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-hardware_interface::CallbackReturn LucySystemHardware::init_registers() {
+hardware_interface::CallbackReturn LucySystemHardware::init_registers()
+{
   release_registers();
 
   shm_node_name_ = shm_node_name_for(node_name_);
@@ -381,8 +382,8 @@ hardware_interface::CallbackReturn LucySystemHardware::init_registers() {
   sem_ = sem_open(sem_name.c_str(), O_CREAT | O_EXCL, 0644, 1);
   if (sem_ == SEM_FAILED) {
     RCLCPP_FATAL(
-        get_logger(), "Failed to create named sem '%s' (sem_open(): %s).",
-        sem_name.c_str(), std::strerror(errno));
+      get_logger(), "Failed to create named sem '%s' (sem_open(): %s).",
+      sem_name.c_str(), std::strerror(errno));
     release_registers();
     return hardware_interface::CallbackReturn::ERROR;
   }
@@ -559,7 +560,7 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
   for (const auto & m : mappings_) {
 
     //msg.position[static_cast<size_t>(m.virtual_pin)] =
-      actuator_command_to_servo_rad(m, hw_commands_[m.joint_index]);
+    actuator_command_to_servo_rad(m, hw_commands_[m.joint_index]);
   }
 
   return hardware_interface::return_type::OK;
