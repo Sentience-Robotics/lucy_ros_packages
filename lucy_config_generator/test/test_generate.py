@@ -37,9 +37,9 @@ def test_schema_accepts_fixture():
 
 def test_ros2_names_derived_from_board_id():
     assert derive_ros2_hardware_name('rp2040_left_arm') == 'LucyHardwareLeftArm'
-    assert derive_ros2_node_name('rp2040_left_arm') == 'lucy_hardware_interface_left_arm'
+    assert derive_ros2_node_name('rp2040_left_arm') == 'left_arm'
     assert derive_ros2_hardware_name('rp2040_torso_head') == 'LucyHardwareTorsoHead'
-    assert derive_ros2_node_name('rp2040_torso_head') == 'lucy_hardware_interface_torso_head'
+    assert derive_ros2_node_name('rp2040_torso_head') == 'torso_head'
 
 
 def test_schema_rejects_bad_version():
@@ -227,6 +227,26 @@ def test_golden_controllers_extra_joints():
     assert got == expected
 
 
+def test_mimic_joints_excluded_from_extra_joints():
+    """A <mimic> joint is derived by robot_state_publisher, not broadcast at 0.0."""
+    data = _load_mapping()
+    mimic_joint = (
+        '  <joint name="passive_mimic_joint" type="revolute">\n'
+        '    <parent link="a"/>\n'
+        '    <child link="b"/>\n'
+        '    <axis xyz="0 0 1"/>\n'
+        '    <limit effort="1" lower="0" upper="1" velocity="1"/>\n'
+        '    <mimic joint="left_a_joint" multiplier="1.0" offset="0.0"/>\n'
+        '  </joint>\n'
+    )
+    urdf = _fixture_urdf_xml().replace('</robot>', mimic_joint + '</robot>')
+    got = generate_from_xacro_string_for_tests(data, urdf, {'controllers'}, None)[
+        GENERATED_FILES_DEFAULTS['controllers_yaml']
+    ]
+    assert 'passive_mimic_joint' not in got
+    assert '- passive_extra_joint' in got
+
+
 def test_boards_filter_emits_subset():
     data = _load_mapping()
     got = generate_from_xacro_string_for_tests(
@@ -273,3 +293,75 @@ def test_generated_files_basenames_drive_output_keys():
     assert 'thais_ros2_control.xacro' in got
     assert 'thais_controllers.yaml' in got
     assert GENERATED_FILES_DEFAULTS['ros2_control_xacro'] not in got
+
+
+def _bus_servo_mapping() -> dict:
+    """Fixture mapping with its first board switched to smart bus servos."""
+    data = _load_mapping()
+    board_id = next(iter(data['boards']))
+    data['boards'][board_id]['board_class'] = 'bus_servo_only'
+    return data, board_id
+
+
+def test_schema_accepts_bus_servo_board_class():
+    data, _ = _bus_servo_mapping()
+    validate_hardware_yaml(data)
+
+
+def test_bus_servo_board_emits_type_and_bus_id():
+    """A bus joint is addressed by id on a shared UART, not by a board pin."""
+    data, board_id = _bus_servo_mapping()
+    out = generate_from_xacro_string_for_tests(
+        data, _fixture_urdf_xml(), targets={'ros2_control'}
+    )
+    xacro = out[resolve_generated_files(data)['ros2_control_xacro']]
+    assert '<param name="type">bus_servo</param>' in xacro
+
+    actuators = [a for a in data['actuators'] if a['board'] == board_id]
+    assert actuators, 'fixture board has no actuators'
+    for a in actuators:
+        assert f'<param name="bus_id">{a["physical_pin"]}</param>' in xacro
+
+
+def test_pwm_board_emits_neither_type_nor_bus_id():
+    """The plugin defaults joints to pwm_servo, so PWM output must not change."""
+    data = _load_mapping()
+    out = generate_from_xacro_string_for_tests(
+        data, _fixture_urdf_xml(), targets={'ros2_control'}
+    )
+    xacro = out[resolve_generated_files(data)['ros2_control_xacro']]
+    assert '<param name="type">' not in xacro
+    assert '<param name="bus_id">' not in xacro
+
+
+def test_bus_servo_board_generates_no_firmware_c():
+    """Bus boards run the generic Rust firmware; there is no per-board C."""
+    data, board_id = _bus_servo_mapping()
+    out = generate_from_xacro_string_for_tests(
+        data, _fixture_urdf_xml(), targets={'firmware'}
+    )
+    assert f'config_{board_id}.c' not in out
+
+
+def test_bus_servo_board_generates_rust_layout():
+    data, board_id = _bus_servo_mapping()
+    out = generate_from_xacro_string_for_tests(
+        data, _fixture_urdf_xml(), targets={'firmware'}
+    )
+    assert f'config_{board_id}.c' not in out
+    rust = out[f'config_{board_id}.rs']
+
+    actuators = [a for a in data['actuators'] if a['board'] == board_id]
+    expected = max(int(a['virtual_pin']) for a in actuators) + 1
+    assert f'pub const BUS_SERVO_SLOTS: u16 = {expected};' in rust
+    assert 'pub const BUS_SERVO_BLOCK: u16 = 3;' in rust
+
+
+def test_slot_count_is_the_board_joint_count():
+    """virtual_pin is validated contiguous from 0, so slots == joints on the board."""
+    data, board_id = _bus_servo_mapping()
+    out = generate_from_xacro_string_for_tests(
+        data, _fixture_urdf_xml(), targets={'firmware'}
+    )
+    count = len([a for a in data['actuators'] if a['board'] == board_id])
+    assert f'pub const BUS_SERVO_SLOTS: u16 = {count};' in out[f'config_{board_id}.rs']

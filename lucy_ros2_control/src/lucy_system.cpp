@@ -16,8 +16,10 @@
 #include "include/lucy_system.hpp"
 
 #include <format>
+#include <cctype>
 #include <cerrno>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <cstddef>
 #include <exception>
@@ -33,6 +35,123 @@
 
 namespace lucy_ros2_control
 {
+namespace
+{
+constexpr const char * kRegTableSuffix = ".lucy_reg_table";
+constexpr const char * kRegHeaderSuffix = ".lucy_reg_header";
+
+/// Node name the POSIX objects are named after: node_name_ sanitised and capped.
+///
+/// shm_open() and sem_open() take a name, not a path: a leading '/' and no other
+/// slash. Darwin caps the whole name at PSHMNAMLEN (31) and fails with
+/// ENAMETOOLONG past it, and the generated node names
+/// ("lucy_hardware_interface_left_arm") blow through that once a suffix is
+/// appended. An over-long name keeps its tail: Lucy's components share the
+/// "lucy_hardware_interface" prefix and differ only in the suffix.
+std::string shm_node_name_for(const std::string & node_name)
+{
+  constexpr std::size_t kMaxShmName = 31;
+  // Leading '/' plus the longest of the two suffixes.
+  const std::size_t budget = kMaxShmName - 1 - std::strlen(kRegHeaderSuffix);
+
+  std::string sanitised;
+  sanitised.reserve(node_name.size());
+  for (const char c : node_name) {
+    const bool keep = std::isalnum(static_cast<unsigned char>(c)) != 0 ||
+      c == '_' || c == '-' || c == '.';
+    sanitised.push_back(keep ? c : '_');
+  }
+  if (sanitised.size() > budget) {
+    sanitised.erase(0, sanitised.size() - budget);
+  }
+  return sanitised;
+}
+
+/// Create, size and map one shared-memory object of `size` bytes.
+///
+/// O_EXCL so an existing object is a fact to act on rather than one silently
+/// adopted: it can only be a leak from a run that died before
+/// release_registers(), and Darwin rejects ftruncate() on an object that
+/// already has a size (EINVAL).
+///
+/// Returns nullptr on failure, having unlinked anything it created, so the
+/// caller records the name only for an object that is now its own to release.
+void * create_shm(
+  const rclcpp::Logger & logger, const std::string & name, std::size_t size, const char * what)
+{
+  int fd = shm_open(name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0666);
+  if (fd == -1 && errno == EEXIST) {
+    RCLCPP_WARN(logger, "Reclaiming '%s' left behind by an earlier run.", name.c_str());
+    shm_unlink(name.c_str());
+    fd = shm_open(name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0666);
+  }
+  if (fd == -1) {
+    RCLCPP_FATAL(
+      logger, "Failed to create '%s' for %s (shm_open(): %s).",
+      name.c_str(), what, std::strerror(errno));
+    return nullptr;
+  }
+
+  if (ftruncate(fd, static_cast<off_t>(size)) == -1) {
+    RCLCPP_FATAL(
+      logger, "Failed to size '%s' for %s (ftruncate(): %s).",
+      name.c_str(), what, std::strerror(errno));
+    close(fd);
+    shm_unlink(name.c_str());
+    return nullptr;
+  }
+
+  void * addr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  close(fd);  // fd not needed after mmap
+
+  if (addr == MAP_FAILED) {
+    RCLCPP_FATAL(
+      logger, "Failed to map '%s' for %s (mmap(): %s).",
+      name.c_str(), what, std::strerror(errno));
+    shm_unlink(name.c_str());
+    return nullptr;
+  }
+  return addr;
+}
+}  // namespace
+
+LucySystemHardware::~LucySystemHardware()
+{
+  release_registers();
+}
+
+void LucySystemHardware::release_registers()
+{
+  if (shared_registers_ != nullptr) {
+    munmap(shared_registers_, sizeof(SharedRegisters));
+    shared_registers_ = nullptr;
+  }
+  if (register_header_ != nullptr) {
+    munmap(register_header_, sizeof(RegisterHeader));
+    register_header_ = nullptr;
+  }
+  if (sem_ != nullptr && sem_ != SEM_FAILED) {
+    sem_close(sem_);
+  }
+  sem_ = nullptr;
+
+  // Drop the names as well: these objects outlive the process that created
+  // them, and on_deactivate does not run when the node is killed outright.
+  // Only names this component created are unlinked, never a peer's.
+  if (!reg_table_name_.empty()) {
+    shm_unlink(reg_table_name_.c_str());
+    reg_table_name_.clear();
+  }
+  if (!reg_header_name_.empty()) {
+    shm_unlink(reg_header_name_.c_str());
+    reg_header_name_.clear();
+  }
+  if (!sem_name_.empty()) {
+    sem_unlink(sem_name_.c_str());
+    sem_name_.clear();
+  }
+}
+
 hardware_interface::CallbackReturn LucySystemHardware::on_init(
   const hardware_interface::HardwareComponentInterfaceParams & params)
 {
@@ -56,7 +175,8 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
 
 
   }
-    // resizing command and state vectors
+
+  // resizing command and state vectors
   hw_positions_.resize(info_.joints.size(), 0);
   // hw_velocities_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN()); // no velocities for our servos
   hw_commands_.resize(info_.joints.size(), 0);
@@ -194,86 +314,71 @@ hardware_interface::CallbackReturn LucySystemHardware::init_actuator_mappings()
     hw_positions_[i] = hw_commands_[i];
   }
 
+  if (const auto duplicate = sort_and_find_duplicate_virtual_pin(mappings_)) {
+    RCLCPP_WARN(
+      get_logger(),
+      "virtual_pin %d is shared by several joints: they overwrite each other's "
+      "registers every cycle, and only the last one written reaches the board. "
+      "Give each joint its own slot.",
+      duplicate.value());
+  }
+
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-hardware_interface::CallbackReturn LucySystemHardware::init_registers() {
-  const std::string reg_table_name = std::format("/{}.lucy_reg_table", node_name_);
-  const std::string reg_header_name = std::format("/{}.lucy_reg_header", node_name_);
-  const std::string sem_name = std::format("/{}", node_name_);
+hardware_interface::CallbackReturn LucySystemHardware::init_registers()
+{
+  release_registers();
 
-  shm_unlink(reg_table_name.c_str());
-  shm_unlink(reg_header_name.c_str());
-
-  { // REGISTER
-    int fd = shm_open(reg_table_name.c_str(), O_CREAT | O_RDWR, 0666);
-    if (fd == -1) {
-      RCLCPP_FATAL(
-        get_logger(), "Failed to create '%s' for register table (shm_open(): %s).",
-        reg_table_name.c_str(), std::strerror(errno));
-      return hardware_interface::CallbackReturn::ERROR;
-    }
-
-    if (ftruncate(fd, sizeof(SharedRegisters)) == -1) {
-      RCLCPP_FATAL(
-        get_logger(), "Failed to size '%s' for register table (ftruncate(): %s).",
-        reg_table_name.c_str(), std::strerror(errno));
-      close(fd);
-      return hardware_interface::CallbackReturn::ERROR;
-    }
-
-    void* addr = mmap(nullptr, sizeof(SharedRegisters),
-                      PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    close(fd); // fd not needed after mmap
-
-    if (addr == MAP_FAILED) {
-      RCLCPP_FATAL(
-        get_logger(), "Failed to map '%s' for register table (mmap(): %s).",
-        reg_table_name.c_str(), std::strerror(errno));
-      return hardware_interface::CallbackReturn::ERROR;
-    }
-
-    shared_registers_ = static_cast<SharedRegisters*>(addr);
+  shm_node_name_ = shm_node_name_for(node_name_);
+  if (shm_node_name_ != node_name_) {
+    RCLCPP_WARN(
+      get_logger(),
+      "node_name '%s' does not fit a POSIX shm name; shared memory uses '%s'.",
+      node_name_.c_str(), shm_node_name_.c_str());
   }
+  const std::string reg_table_name = std::format("/{}{}", shm_node_name_, kRegTableSuffix);
+  const std::string reg_header_name = std::format("/{}{}", shm_node_name_, kRegHeaderSuffix);
+  const std::string sem_name = std::format("/{}", shm_node_name_);
 
-  { // REGISTER TABLE
-    int fd = shm_open(reg_header_name.c_str(), O_CREAT | O_RDWR, 0666);
-    if (fd == -1) {
-      RCLCPP_FATAL(
-        get_logger(), "Failed to create '%s' for register header (shm_open(): %s).",
-        reg_header_name.c_str(), std::strerror(errno));
-      return hardware_interface::CallbackReturn::ERROR;
-    }
-
-    if (ftruncate(fd, sizeof(RegisterHeader)) == -1) {
-      RCLCPP_FATAL(
-        get_logger(), "Failed to size '%s' for register header (ftruncate(): %s).",
-        reg_header_name.c_str(), std::strerror(errno));
-      close(fd);
-      return hardware_interface::CallbackReturn::ERROR;
-    }
-
-    void* addr = mmap(nullptr, sizeof(RegisterHeader),
-                      PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    close(fd); // fd not needed after mmap
-
-    if (addr == MAP_FAILED) {
-      RCLCPP_FATAL(
-        get_logger(), "Failed to map '%s' for register header (mmap(): %s).",
-        reg_header_name.c_str(), std::strerror(errno));
-      return hardware_interface::CallbackReturn::ERROR;
-    }
-
-    register_header_ = static_cast<RegisterHeader*>(addr);
-  }
-
-  sem_ = sem_open(sem_name.c_str(), O_CREAT, 0644, 1);
-  if (sem_ == SEM_FAILED) {
-    RCLCPP_FATAL(
-        get_logger(), "Failed to create named sem '%s' (sem_open(): %s).",
-        sem_name.c_str(), std::strerror(errno));
+  void * table = create_shm(
+    get_logger(), reg_table_name, sizeof(SharedRegisters), "register table");
+  if (table == nullptr) {
     return hardware_interface::CallbackReturn::ERROR;
   }
+  // Named from here on, so every later failure unlinks it back out.
+  shared_registers_ = static_cast<SharedRegisters *>(table);
+  reg_table_name_ = reg_table_name;
+
+  void * header = create_shm(
+    get_logger(), reg_header_name, sizeof(RegisterHeader), "register header");
+  if (header == nullptr) {
+    release_registers();
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+  register_header_ = static_cast<RegisterHeader *>(header);
+  reg_header_name_ = reg_header_name;
+
+  // Unlink before creating: a semaphore outlives its creator, and one left at 0
+  // by a run that died between sem_wait() and sem_post() would be adopted as-is
+  // and deadlock the first write().
+  sem_unlink(sem_name.c_str());
+  sem_ = sem_open(sem_name.c_str(), O_CREAT | O_EXCL, 0644, 1);
+  if (sem_ == SEM_FAILED) {
+    RCLCPP_FATAL(
+      get_logger(), "Failed to create named sem '%s' (sem_open(): %s).",
+      sem_name.c_str(), std::strerror(errno));
+    release_registers();
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+  sem_name_ = sem_name;
+
+  RCLCPP_INFO(
+    get_logger(),
+    "Registers mapped on '%s' and '%s', lock '%s'. Attach the firmware bridge "
+    "with node name '%s'.",
+    reg_table_name.c_str(), reg_header_name.c_str(), sem_name.c_str(),
+    shm_node_name_.c_str());
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -306,9 +411,78 @@ std::vector<hardware_interface::CommandInterface> LucySystemHardware::export_com
 This function should be used to initialize/activate the hardware.
 In our case, the hardware is already ready to receive informations
 */
+void LucySystemHardware::write_torque_opcode(
+  const ActuatedJointMapping & m, uint16_t opcode)
+{
+  const int reg = bus_block_base(m.virtual_pin);
+  shared_registers_->register_table[reg + kBusServoIdOffset] =
+    static_cast<uint16_t>(m.bus_id);
+  register_header_->set_dirty(reg + kBusServoIdOffset);
+  shared_registers_->register_table[reg + kBusServoCmdOffset] = opcode;
+  register_header_->set_dirty(reg + kBusServoCmdOffset);
+}
+
+void LucySystemHardware::apply_torque_state(bool enable)
+{
+  const uint16_t opcode = enable ? kBusServoCmdEnableTorque : kBusServoCmdDisableTorque;
+  for (const auto & m : mappings_) {
+    if (m.type != Type::BUS_SERVO) {
+      continue;
+    }
+    sem_wait(sem_);
+    write_torque_opcode(m, opcode);
+    sem_post(sem_);
+    RCLCPP_INFO(
+      get_logger(), "%s torque on bus servo id %d.",
+      enable ? "Enabling" : "Disabling", m.bus_id);
+  }
+  torque_enabled_ = enable;
+}
+
+void LucySystemHardware::start_active_client_watch()
+{
+  if (node_ == nullptr || client_spin_thread_.joinable()) {
+    return;
+  }
+  // Transient-local to match the latched publisher: the current controller is
+  // delivered on subscribe, not only on the next change.
+  rclcpp::QoS qos(rclcpp::KeepLast(1));
+  qos.reliable().transient_local();
+  active_client_sub_ = node_->create_subscription<std_msgs::msg::String>(
+    kActiveClientTopic, qos,
+    [this](const std_msgs::msg::String::SharedPtr msg) {
+      controlled_.store(!msg->data.empty(), std::memory_order_relaxed);
+    });
+
+  // A subscription needs an executor, and it must not run on the
+  // controller-manager thread.
+  client_executor_ = std::make_unique<rclcpp::executors::SingleThreadedExecutor>();
+  client_executor_->add_node(node_);
+  client_spin_thread_ = std::thread([this]() {client_executor_->spin();});
+}
+
+void LucySystemHardware::stop_active_client_watch()
+{
+  if (client_executor_ != nullptr) {
+    client_executor_->cancel();
+  }
+  if (client_spin_thread_.joinable()) {
+    client_spin_thread_.join();
+  }
+  if (client_executor_ != nullptr && node_ != nullptr) {
+    client_executor_->remove_node(node_);
+  }
+  client_executor_.reset();
+  active_client_sub_.reset();
+}
+
 hardware_interface::CallbackReturn LucySystemHardware::on_activate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
+  start_active_client_watch();
+
+  apply_torque_state(false);
+
   RCLCPP_INFO(get_logger(), "Successfully activated!");
 
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -317,24 +491,14 @@ hardware_interface::CallbackReturn LucySystemHardware::on_activate(
 hardware_interface::CallbackReturn LucySystemHardware::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
+  if (shared_registers_ != nullptr && sem_ != nullptr) {
+    apply_torque_state(false);
+  }
+  stop_active_client_watch();
+
   RCLCPP_INFO(get_logger(), "Successfully deactivated!");
 
-  if (shared_registers_ != nullptr) {
-    munmap(shared_registers_, sizeof(SharedRegisters));
-    shared_registers_ = nullptr;
-  }
-  if (register_header_ != nullptr) {
-    munmap(register_header_, sizeof(RegisterHeader));
-    register_header_ = nullptr;
-  }
-  shm_unlink(std::format("/{}.lucy_reg_table", node_name_).c_str());
-  shm_unlink(std::format("/{}.lucy_reg_header", node_name_).c_str());
-
-  if (sem_ != SEM_FAILED && sem_ != nullptr) {
-    sem_close(sem_);
-    sem_unlink(std::format("/{}", node_name_).c_str());
-    sem_ = SEM_FAILED;
-  }
+  release_registers();
 
   return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -378,6 +542,23 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
     hw_positions_[i] = cmd_rad;
   }
 
+  // Applied here, not in the subscription callback, to keep the register block
+  // single-writer.
+  const bool controlled = controlled_.load(std::memory_order_relaxed);
+  if (controlled != torque_enabled_) {
+    apply_torque_state(controlled);
+    if (controlled) {
+      // NaN fails the unchanged-command guard below, forcing every target to
+      // be re-sent.
+      for (std::size_t i = 0; i < hw_old_commands_.size(); ++i) {
+        hw_old_commands_[i] = std::numeric_limits<double>::quiet_NaN();
+      }
+    }
+  }
+  if (!torque_enabled_) {
+    return hardware_interface::return_type::OK;
+  }
+
   for (const auto & m : mappings_) {
     const std::size_t i = m.joint_index;
     const double cmd_rad = hw_commands_[i];
@@ -386,24 +567,33 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
     }
     hw_old_commands_[i] = cmd_rad;
 
-    const uint16_t wire = to_register_milliradians(cmd_rad);
-    const int reg = m.virtual_pin;
+    // Joint space -> servo space: applies offset_deg / direction / scale and
+    // clamps to [servo_min_deg, servo_max_deg]. Sending the raw joint angle
+    // skips the mechanical envelope and wraps negative commands to ~2*pi.
+    const uint16_t wire = to_register_milliradians(actuator_command_to_servo_rad(m, cmd_rad));
+    const int reg =
+      m.type == Type::BUS_SERVO ? bus_block_base(m.virtual_pin) : m.virtual_pin;
 
     sem_wait(sem_);
     switch (m.type) {
       case Type::PWM_SERVO:
-        shared_registers_->register_table[reg] = 1;
-        register_header_->set_dirty(reg);
+        // Angle first, opcode last: same ordering rule as the bus block below.
         shared_registers_->register_table[reg + 1] = wire;
         register_header_->set_dirty(reg + 1);
-        break;
-      case Type::BUS_SERVO:
         shared_registers_->register_table[reg] = 1;
         register_header_->set_dirty(reg);
-        shared_registers_->register_table[reg + 1] = static_cast<uint16_t>(m.bus_id);
-        register_header_->set_dirty(reg + 1);
-        shared_registers_->register_table[reg + 2] = wire;
-        register_header_->set_dirty(reg + 2);
+        break;
+      case Type::BUS_SERVO:
+        // Operands first, opcode last: the bridge ships dirty registers in
+        // ascending index order and the firmware clears cmd in the tick that
+        // consumes it, so a cmd sent first fires on the previous id/angle.
+        shared_registers_->register_table[reg + kBusServoIdOffset] =
+          static_cast<uint16_t>(m.bus_id);
+        register_header_->set_dirty(reg + kBusServoIdOffset);
+        shared_registers_->register_table[reg + kBusServoAngleOffset] = wire;
+        register_header_->set_dirty(reg + kBusServoAngleOffset);
+        shared_registers_->register_table[reg + kBusServoCmdOffset] = kBusServoCmdMove;
+        register_header_->set_dirty(reg + kBusServoCmdOffset);
         break;
     }
     sem_post(sem_);
@@ -422,7 +612,7 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
   for (const auto & m : mappings_) {
 
     //msg.position[static_cast<size_t>(m.virtual_pin)] =
-      actuator_command_to_servo_rad(m, hw_commands_[m.joint_index]);
+    actuator_command_to_servo_rad(m, hw_commands_[m.joint_index]);
   }
 
   return hardware_interface::return_type::OK;

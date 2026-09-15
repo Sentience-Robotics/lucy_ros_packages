@@ -35,7 +35,6 @@ Arguments:
 
 """
 
-import os
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -209,8 +208,10 @@ def _real_hardware_stack(context, *args, **kwargs):
     real = LaunchConfiguration('real').perform(context).lower().strip()
     if real not in ('true', '1', 'yes'):
         return []
-    out = list()
-    cam_share = get_package_share_directory('camera_ros')
+    out = []
+    # Camera and RealSense are off while the hardware bring-up is in flux. To
+    # restore either, re-import os and take its share directory back:
+    # cam_share = get_package_share_directory('camera_ros')
     # out.append(
     #     IncludeLaunchDescription(
     #         PythonLaunchDescriptionSource(
