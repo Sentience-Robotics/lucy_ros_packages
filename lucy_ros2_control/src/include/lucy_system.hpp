@@ -117,6 +117,15 @@ constexpr int kBusServoAngleOffset = 1;
 constexpr int kBusServoCmdOffset = 2;
 constexpr int kBusServoRegisterCount = 3;
 
+/// First register of a bus joint's block. virtual_pin is a slot index, not a
+/// register index: a bus servo occupies three registers, so slots that only
+/// differ by one would overlap. With every joint sharing one block, whichever
+/// joint was written last was the only one the bridge ever shipped.
+constexpr int bus_block_base(int virtual_pin)
+{
+  return virtual_pin * kBusServoRegisterCount;
+}
+
 // Firmware bus-servo opcodes (BusServoModbusAdapter::tick).
 constexpr uint16_t kBusServoCmdMove = 1;
 constexpr uint16_t kBusServoCmdEnableTorque = 3;
@@ -228,11 +237,6 @@ private:
   std::vector<double> joint_max_rad_;
 
   bool publish_actuators_{true};
-
-  /// When non-zero, only this bus id is driven; set from LUCY_BUS_SERVO_ID.
-  /// The rp2040 firmware exposes a single bus-servo adapter at register 0, so
-  /// every bus joint currently shares one register block.
-  int active_bus_id_{0};
 
   std::vector<ActuatedJointMapping> mappings_;
 

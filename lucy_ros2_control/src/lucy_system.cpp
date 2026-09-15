@@ -176,22 +176,6 @@ hardware_interface::CallbackReturn LucySystemHardware::on_init(
 
   }
 
-  // Bring-up escape hatch: the firmware has a single bus-servo adapter and the
-  // generated xacro gives every bus joint virtual_pin 0, so all of them target
-  // the same register block. Restrict output to one id until that is fixed.
-  if (const char * raw = std::getenv("LUCY_BUS_SERVO_ID")) {
-    try {
-      active_bus_id_ = std::stoi(raw);
-    } catch (const std::exception &) {
-      RCLCPP_FATAL(get_logger(), "LUCY_BUS_SERVO_ID='%s' is not an integer.", raw);
-      return hardware_interface::CallbackReturn::ERROR;
-    }
-    RCLCPP_WARN(
-      get_logger(),
-      "LUCY_BUS_SERVO_ID=%d: only that bus servo will be driven; every other "
-      "bus joint is held back.",
-      active_bus_id_);
-  }
   // resizing command and state vectors
   hw_positions_.resize(info_.joints.size(), 0);
   // hw_velocities_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN()); // no velocities for our servos
@@ -334,8 +318,8 @@ hardware_interface::CallbackReturn LucySystemHardware::init_actuator_mappings()
     RCLCPP_WARN(
       get_logger(),
       "virtual_pin %d is shared by several joints: they overwrite each other's "
-      "registers every cycle. Set LUCY_BUS_SERVO_ID to drive one servo, or give "
-      "each joint its own register block.",
+      "registers every cycle, and only the last one written reaches the board. "
+      "Give each joint its own slot.",
       duplicate.value());
   }
 
@@ -430,7 +414,7 @@ In our case, the hardware is already ready to receive informations
 void LucySystemHardware::write_torque_opcode(
   const ActuatedJointMapping & m, uint16_t opcode)
 {
-  const int reg = m.virtual_pin;
+  const int reg = bus_block_base(m.virtual_pin);
   shared_registers_->register_table[reg + kBusServoIdOffset] =
     static_cast<uint16_t>(m.bus_id);
   register_header_->set_dirty(reg + kBusServoIdOffset);
@@ -443,9 +427,6 @@ void LucySystemHardware::apply_torque_state(bool enable)
   const uint16_t opcode = enable ? kBusServoCmdEnableTorque : kBusServoCmdDisableTorque;
   for (const auto & m : mappings_) {
     if (m.type != Type::BUS_SERVO) {
-      continue;
-    }
-    if (active_bus_id_ != 0 && m.bus_id != active_bus_id_) {
       continue;
     }
     sem_wait(sem_);
@@ -584,10 +565,6 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
   }
 
   for (const auto & m : mappings_) {
-    if (m.type == Type::BUS_SERVO && active_bus_id_ != 0 && m.bus_id != active_bus_id_) {
-      continue;
-    }
-
     const std::size_t i = m.joint_index;
     const double cmd_rad = hw_commands_[i];
     if (std::abs(cmd_rad - hw_old_commands_[i]) <= 0.001) {
@@ -599,7 +576,8 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
     // clamps to [servo_min_deg, servo_max_deg]. Sending the raw joint angle
     // skips the mechanical envelope and wraps negative commands to ~2*pi.
     const uint16_t wire = to_register_milliradians(actuator_command_to_servo_rad(m, cmd_rad));
-    const int reg = m.virtual_pin;
+    const int reg =
+      m.type == Type::BUS_SERVO ? bus_block_base(m.virtual_pin) : m.virtual_pin;
 
     sem_wait(sem_);
     switch (m.type) {
