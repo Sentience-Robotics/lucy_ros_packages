@@ -78,9 +78,8 @@ GENERATED_FILES_DEFAULTS: dict[str, str] = {
 # Firmware C template: single internal PWM stack vs internal + I2C (PCA) stack.
 BOARD_CLASS_INTERNAL_ONLY = 'internal_servo_only'
 BOARD_CLASS_INTERNAL_I2C_PWM = 'internal_servo_i2c_pwm'
-# Smart bus servos daisy-chained on one UART, addressed by id rather than wired
-# to a pin each. The board runs the generic Rust firmware, so nothing about it
-# is generated into C.
+# Smart bus servos daisy-chained on one UART, addressed by id rather than each
+# wired to a pin. Firmware config for these is emitted as Rust, not C.
 BOARD_CLASS_BUS_SERVO_ONLY = 'bus_servo_only'
 BOARD_CLASSES = frozenset(
     {
@@ -127,10 +126,8 @@ def derive_ros2_node_name(board_id: str) -> str:
     Pattern: the bare snake_case suffix after ``rp2040_``.
 
     ``LucySystemHardware`` names its POSIX shm/sem objects after this, and Darwin
-    caps the whole name at PSHMNAMLEN (31) — 14 chars once the leading '/' and
-    ``.lucy_reg_header`` are accounted for. A ``lucy_hardware_interface_`` prefix
-    overran that and ``shm_node_name_for()`` silently kept only the tail
-    (``lucy_hardware_interface_left_arm`` → ``rface_left_arm``).
+    caps those at 31 chars — 14 once the leading '/' and ``.lucy_reg_header``
+    are accounted for.
     """
     return ros2_hardware_suffix(board_id)
 

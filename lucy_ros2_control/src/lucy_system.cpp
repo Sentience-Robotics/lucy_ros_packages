@@ -444,8 +444,8 @@ void LucySystemHardware::start_active_client_watch()
   if (node_ == nullptr || client_spin_thread_.joinable()) {
     return;
   }
-  // Match ClientRegistryNode's latched publisher, so the current controller is
-  // delivered on subscribe instead of only on the next change.
+  // Transient-local to match the latched publisher: the current controller is
+  // delivered on subscribe, not only on the next change.
   rclcpp::QoS qos(rclcpp::KeepLast(1));
   qos.reliable().transient_local();
   active_client_sub_ = node_->create_subscription<std_msgs::msg::String>(
@@ -454,8 +454,8 @@ void LucySystemHardware::start_active_client_watch()
       controlled_.store(!msg->data.empty(), std::memory_order_relaxed);
     });
 
-  // node_ exists for the actuator publisher and was never spun; a subscription
-  // needs an executor, and it must not run on the controller-manager thread.
+  // A subscription needs an executor, and it must not run on the
+  // controller-manager thread.
   client_executor_ = std::make_unique<rclcpp::executors::SingleThreadedExecutor>();
   client_executor_->add_node(node_);
   client_spin_thread_ = std::thread([this]() {client_executor_->spin();});
@@ -481,9 +481,6 @@ hardware_interface::CallbackReturn LucySystemHardware::on_activate(
 {
   start_active_client_watch();
 
-  // Torque starts off and write() turns it on once a client takes control, so
-  // an unattended robot never holds position (and never sags mid-pose under a
-  // controller nobody is driving).
   apply_torque_state(false);
 
   RCLCPP_INFO(get_logger(), "Successfully activated!");
@@ -545,16 +542,14 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
     hw_positions_[i] = cmd_rad;
   }
 
-  // Torque follows whoever holds control. Done here rather than in the
-  // subscription callback so the register block only ever has one writer.
+  // Applied here, not in the subscription callback, to keep the register block
+  // single-writer.
   const bool controlled = controlled_.load(std::memory_order_relaxed);
   if (controlled != torque_enabled_) {
     apply_torque_state(controlled);
     if (controlled) {
-      // Re-send every target on the next cycle: the unchanged-command guard
-      // below compares against hw_old_commands_, and NaN fails that comparison.
-      // Without this a joint whose target never changed while limp would never
-      // be commanded again.
+      // NaN fails the unchanged-command guard below, forcing every target to
+      // be re-sent.
       for (std::size_t i = 0; i < hw_old_commands_.size(); ++i) {
         hw_old_commands_[i] = std::numeric_limits<double>::quiet_NaN();
       }

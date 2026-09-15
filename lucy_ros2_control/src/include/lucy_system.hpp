@@ -118,9 +118,7 @@ constexpr int kBusServoCmdOffset = 2;
 constexpr int kBusServoRegisterCount = 3;
 
 /// First register of a bus joint's block. virtual_pin is a slot index, not a
-/// register index: a bus servo occupies three registers, so slots that only
-/// differ by one would overlap. With every joint sharing one block, whichever
-/// joint was written last was the only one the bridge ever shipped.
+/// register index: a bus servo occupies three registers.
 constexpr int bus_block_base(int virtual_pin)
 {
   return virtual_pin * kBusServoRegisterCount;
@@ -131,9 +129,7 @@ constexpr uint16_t kBusServoCmdMove = 1;
 constexpr uint16_t kBusServoCmdEnableTorque = 3;
 constexpr uint16_t kBusServoCmdDisableTorque = 5;
 
-/// Topic the client registry latches the controlling client's id onto; empty
-/// means nobody holds control. Published by lucy_config_pipeline's
-/// ClientRegistryNode, which is the single writer.
+/// Latches the controlling client's id; empty means nobody holds control.
 constexpr const char * kActiveClientTopic = "/lucy/active_client";
 
 
@@ -244,12 +240,10 @@ private:
   rclcpp::executors::SingleThreadedExecutor::UniquePtr client_executor_;
   std::thread client_spin_thread_;
 
-  /// Whether a client currently holds control. Written by the subscription
-  /// thread, read by write() on the controller-manager thread.
+  /// Written by the subscription thread, read by write().
   std::atomic<bool> controlled_{false};
 
-  /// Torque state already pushed to the servos. Only write() touches this, so
-  /// the register block is never written from two threads at once.
+  /// Only write() may touch this: it keeps the register block single-writer.
   bool torque_enabled_{false};
 };
 
