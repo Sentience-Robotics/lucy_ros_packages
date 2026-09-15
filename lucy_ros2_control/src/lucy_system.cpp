@@ -427,11 +427,20 @@ std::vector<hardware_interface::CommandInterface> LucySystemHardware::export_com
 This function should be used to initialize/activate the hardware.
 In our case, the hardware is already ready to receive informations
 */
-hardware_interface::CallbackReturn LucySystemHardware::on_activate(
-  const rclcpp_lifecycle::State & /*previous_state*/)
+void LucySystemHardware::write_torque_opcode(
+  const ActuatedJointMapping & m, uint16_t opcode)
 {
-  // Nothing else issues the torque-enable opcode, so a servo left with torque
-  // off would accept target positions and never move.
+  const int reg = m.virtual_pin;
+  shared_registers_->register_table[reg + kBusServoIdOffset] =
+    static_cast<uint16_t>(m.bus_id);
+  register_header_->set_dirty(reg + kBusServoIdOffset);
+  shared_registers_->register_table[reg + kBusServoCmdOffset] = opcode;
+  register_header_->set_dirty(reg + kBusServoCmdOffset);
+}
+
+void LucySystemHardware::apply_torque_state(bool enable)
+{
+  const uint16_t opcode = enable ? kBusServoCmdEnableTorque : kBusServoCmdDisableTorque;
   for (const auto & m : mappings_) {
     if (m.type != Type::BUS_SERVO) {
       continue;
@@ -439,16 +448,62 @@ hardware_interface::CallbackReturn LucySystemHardware::on_activate(
     if (active_bus_id_ != 0 && m.bus_id != active_bus_id_) {
       continue;
     }
-    const int reg = m.virtual_pin;
     sem_wait(sem_);
-    shared_registers_->register_table[reg + kBusServoIdOffset] =
-      static_cast<uint16_t>(m.bus_id);
-    register_header_->set_dirty(reg + kBusServoIdOffset);
-    shared_registers_->register_table[reg + kBusServoCmdOffset] = kBusServoCmdEnableTorque;
-    register_header_->set_dirty(reg + kBusServoCmdOffset);
+    write_torque_opcode(m, opcode);
     sem_post(sem_);
-    RCLCPP_INFO(get_logger(), "Enabling torque on bus servo id %d.", m.bus_id);
+    RCLCPP_INFO(
+      get_logger(), "%s torque on bus servo id %d.",
+      enable ? "Enabling" : "Disabling", m.bus_id);
   }
+  torque_enabled_ = enable;
+}
+
+void LucySystemHardware::start_active_client_watch()
+{
+  if (node_ == nullptr || client_spin_thread_.joinable()) {
+    return;
+  }
+  // Match ClientRegistryNode's latched publisher, so the current controller is
+  // delivered on subscribe instead of only on the next change.
+  rclcpp::QoS qos(rclcpp::KeepLast(1));
+  qos.reliable().transient_local();
+  active_client_sub_ = node_->create_subscription<std_msgs::msg::String>(
+    kActiveClientTopic, qos,
+    [this](const std_msgs::msg::String::SharedPtr msg) {
+      controlled_.store(!msg->data.empty(), std::memory_order_relaxed);
+    });
+
+  // node_ exists for the actuator publisher and was never spun; a subscription
+  // needs an executor, and it must not run on the controller-manager thread.
+  client_executor_ = std::make_unique<rclcpp::executors::SingleThreadedExecutor>();
+  client_executor_->add_node(node_);
+  client_spin_thread_ = std::thread([this]() {client_executor_->spin();});
+}
+
+void LucySystemHardware::stop_active_client_watch()
+{
+  if (client_executor_ != nullptr) {
+    client_executor_->cancel();
+  }
+  if (client_spin_thread_.joinable()) {
+    client_spin_thread_.join();
+  }
+  if (client_executor_ != nullptr && node_ != nullptr) {
+    client_executor_->remove_node(node_);
+  }
+  client_executor_.reset();
+  active_client_sub_.reset();
+}
+
+hardware_interface::CallbackReturn LucySystemHardware::on_activate(
+  const rclcpp_lifecycle::State & /*previous_state*/)
+{
+  start_active_client_watch();
+
+  // Torque starts off and write() turns it on once a client takes control, so
+  // an unattended robot never holds position (and never sags mid-pose under a
+  // controller nobody is driving).
+  apply_torque_state(false);
 
   RCLCPP_INFO(get_logger(), "Successfully activated!");
 
@@ -458,6 +513,11 @@ hardware_interface::CallbackReturn LucySystemHardware::on_activate(
 hardware_interface::CallbackReturn LucySystemHardware::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
+  if (shared_registers_ != nullptr && sem_ != nullptr) {
+    apply_torque_state(false);
+  }
+  stop_active_client_watch();
+
   RCLCPP_INFO(get_logger(), "Successfully deactivated!");
 
   release_registers();
@@ -502,6 +562,25 @@ hardware_interface::return_type lucy_ros2_control::LucySystemHardware::write(
       hw_commands_[i], joint_min_rad_[i], joint_max_rad_[i]);
     hw_commands_[i] = cmd_rad;
     hw_positions_[i] = cmd_rad;
+  }
+
+  // Torque follows whoever holds control. Done here rather than in the
+  // subscription callback so the register block only ever has one writer.
+  const bool controlled = controlled_.load(std::memory_order_relaxed);
+  if (controlled != torque_enabled_) {
+    apply_torque_state(controlled);
+    if (controlled) {
+      // Re-send every target on the next cycle: the unchanged-command guard
+      // below compares against hw_old_commands_, and NaN fails that comparison.
+      // Without this a joint whose target never changed while limp would never
+      // be commanded again.
+      for (std::size_t i = 0; i < hw_old_commands_.size(); ++i) {
+        hw_old_commands_[i] = std::numeric_limits<double>::quiet_NaN();
+      }
+    }
+  }
+  if (!torque_enabled_) {
+    return hardware_interface::return_type::OK;
   }
 
   for (const auto & m : mappings_) {

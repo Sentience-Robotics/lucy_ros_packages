@@ -27,7 +27,9 @@
 #include <memory>
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 #include <string>
+#include <thread>
 #include <vector>
 #include <array>
 
@@ -54,6 +56,7 @@
 #include "rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp"
 #include "rclcpp_lifecycle/state.hpp"
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <std_msgs/msg/string.hpp>
 
 #include "joint_config.hpp"
 
@@ -117,6 +120,12 @@ constexpr int kBusServoRegisterCount = 3;
 // Firmware bus-servo opcodes (BusServoModbusAdapter::tick).
 constexpr uint16_t kBusServoCmdMove = 1;
 constexpr uint16_t kBusServoCmdEnableTorque = 3;
+constexpr uint16_t kBusServoCmdDisableTorque = 5;
+
+/// Topic the client registry latches the controlling client's id onto; empty
+/// means nobody holds control. Published by lucy_config_pipeline's
+/// ClientRegistryNode, which is the single writer.
+constexpr const char * kActiveClientTopic = "/lucy/active_client";
 
 
 class LucySystemHardware : public hardware_interface::SystemInterface
@@ -167,6 +176,18 @@ private:
   /// Unmap the register objects and drop their shm / semaphore names. Idempotent.
   void release_registers();
 
+  /// Subscribe to the active-client topic and spin node_ on its own thread.
+  void start_active_client_watch();
+
+  /// Stop the spin thread. Idempotent.
+  void stop_active_client_watch();
+
+  /// Write one bus servo's torque opcode. Caller must hold sem_.
+  void write_torque_opcode(const ActuatedJointMapping & m, uint16_t opcode);
+
+  /// Bring every bus servo's torque in line with controlled_. Takes sem_ itself.
+  void apply_torque_state(bool enable);
+
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_publisher_;
   rclcpp::Node::SharedPtr node_;
 
@@ -214,6 +235,18 @@ private:
   int active_bus_id_{0};
 
   std::vector<ActuatedJointMapping> mappings_;
+
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr active_client_sub_;
+  rclcpp::executors::SingleThreadedExecutor::UniquePtr client_executor_;
+  std::thread client_spin_thread_;
+
+  /// Whether a client currently holds control. Written by the subscription
+  /// thread, read by write() on the controller-manager thread.
+  std::atomic<bool> controlled_{false};
+
+  /// Torque state already pushed to the servos. Only write() touches this, so
+  /// the register block is never written from two threads at once.
+  bool torque_enabled_{false};
 };
 
 }  // namespace lucy_ros2_control
