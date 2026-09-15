@@ -37,9 +37,9 @@ def test_schema_accepts_fixture():
 
 def test_ros2_names_derived_from_board_id():
     assert derive_ros2_hardware_name('rp2040_left_arm') == 'LucyHardwareLeftArm'
-    assert derive_ros2_node_name('rp2040_left_arm') == 'lucy_hardware_interface_left_arm'
+    assert derive_ros2_node_name('rp2040_left_arm') == 'left_arm'
     assert derive_ros2_hardware_name('rp2040_torso_head') == 'LucyHardwareTorsoHead'
-    assert derive_ros2_node_name('rp2040_torso_head') == 'lucy_hardware_interface_torso_head'
+    assert derive_ros2_node_name('rp2040_torso_head') == 'torso_head'
 
 
 def test_schema_rejects_bad_version():

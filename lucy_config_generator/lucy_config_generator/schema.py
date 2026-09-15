@@ -114,9 +114,15 @@ def derive_ros2_node_name(board_id: str) -> str:
     """
     Return the ``node_name`` hardware parameter for *board_id*.
 
-    Pattern: ``lucy_hardware_interface_`` + snake_case suffix after ``rp2040_``.
+    Pattern: the bare snake_case suffix after ``rp2040_``.
+
+    ``LucySystemHardware`` names its POSIX shm/sem objects after this, and Darwin
+    caps the whole name at PSHMNAMLEN (31) — 14 chars once the leading '/' and
+    ``.lucy_reg_header`` are accounted for. A ``lucy_hardware_interface_`` prefix
+    overran that and ``shm_node_name_for()`` silently kept only the tail
+    (``lucy_hardware_interface_left_arm`` → ``rface_left_arm``).
     """
-    return 'lucy_hardware_interface_' + ros2_hardware_suffix(board_id)
+    return ros2_hardware_suffix(board_id)
 
 
 def resolve_generated_files(data: dict[str, Any]) -> dict[str, str]:
