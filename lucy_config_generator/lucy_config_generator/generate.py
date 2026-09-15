@@ -186,9 +186,7 @@ def _actuator_joint_for_ros2(
         row['limit_lower_rad'] = pair[0]
         row['limit_upper_rad'] = pair[1]
     if board_class == BOARD_CLASS_BUS_SERVO_ONLY:
-        # A bus servo is reached by id over a shared UART, so physical_pin is
-        # that id rather than a board pin. The plugin defaults joints to
-        # pwm_servo, so only bus boards carry these two params.
+        # physical_pin is the servo's id on the shared UART, not a board pin.
         row['joint_type'] = 'bus_servo'
         row['bus_id'] = actuator['physical_pin']
     return row
@@ -334,6 +332,27 @@ def _firmware_template_for_board_class(board_class: str) -> str:
     raise ValueError(f'unknown board_class for firmware template: {board_class!r}')
 
 
+BUS_SERVO_BLOCK = 3
+
+
+def render_firmware_rs(
+    data: dict[str, Any],
+    board_id: str,
+    env: jinja2.Environment | None = None,
+) -> str:
+    """Render the Rust register layout for a bus-servo board."""
+    env = env or _jinja_env()
+    actuators = _actuators_for_board(data, board_id, enabled_only=False)
+    slots = max((int(a['virtual_pin']) for a in actuators), default=-1) + 1
+    tpl = env.get_template('config_bus_servo_board.rs.j2')
+    return tpl.render(
+        board_id=board_id,
+        bus_servo_block=BUS_SERVO_BLOCK,
+        bus_servo_base=0,
+        bus_servo_slots=slots,
+    )
+
+
 def render_firmware_c(
     data: dict[str, Any],
     board_id: str,
@@ -472,9 +491,9 @@ def generate(
     if targets & {'firmware', 'all'} and not simulation_only:
         fw_boards = _resolve_board_ids(data, boards_filter)
         for bid in fw_boards:
-            # Bus-servo boards run the generic Rust firmware; there is no
-            # per-board C to render for them.
             if data['boards'][bid]['board_class'] == BOARD_CLASS_BUS_SERVO_ONLY:
+                out = output_dir / f'config_{bid}.rs'
+                out.write_text(render_firmware_rs(data, bid, env), encoding='utf-8')
                 continue
             text = render_firmware_c(data, bid, env)
             out = output_dir / f'config_{bid}.c'
@@ -530,6 +549,7 @@ def generate_from_xacro_string_for_tests(
     if targets & {'firmware', 'all'} and not simulation_only:
         for bid in firmware_boards:
             if data['boards'][bid]['board_class'] == BOARD_CLASS_BUS_SERVO_ONLY:
+                out[f'config_{bid}.rs'] = render_firmware_rs(data, bid, env)
                 continue
             out[f'config_{bid}.c'] = render_firmware_c(data, bid, env)
     if targets & {'ros2_control', 'all'}:

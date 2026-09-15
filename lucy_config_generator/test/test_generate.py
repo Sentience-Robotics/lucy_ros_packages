@@ -341,3 +341,27 @@ def test_bus_servo_board_generates_no_firmware_c():
         data, _fixture_urdf_xml(), targets={'firmware'}
     )
     assert f'config_{board_id}.c' not in out
+
+
+def test_bus_servo_board_generates_rust_layout():
+    data, board_id = _bus_servo_mapping()
+    out = generate_from_xacro_string_for_tests(
+        data, _fixture_urdf_xml(), targets={'firmware'}
+    )
+    assert f'config_{board_id}.c' not in out
+    rust = out[f'config_{board_id}.rs']
+
+    actuators = [a for a in data['actuators'] if a['board'] == board_id]
+    expected = max(int(a['virtual_pin']) for a in actuators) + 1
+    assert f'pub const BUS_SERVO_SLOTS: u16 = {expected};' in rust
+    assert 'pub const BUS_SERVO_BLOCK: u16 = 3;' in rust
+
+
+def test_slot_count_is_the_board_joint_count():
+    """virtual_pin is validated contiguous from 0, so slots == joints on the board."""
+    data, board_id = _bus_servo_mapping()
+    out = generate_from_xacro_string_for_tests(
+        data, _fixture_urdf_xml(), targets={'firmware'}
+    )
+    count = len([a for a in data['actuators'] if a['board'] == board_id])
+    assert f'pub const BUS_SERVO_SLOTS: u16 = {count};' in out[f'config_{board_id}.rs']
