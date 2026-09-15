@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 
 import jinja2
 
+from lucy_config_generator.schema import BOARD_CLASS_BUS_SERVO_ONLY
 from lucy_config_generator.schema import BOARD_CLASS_INTERNAL_I2C_PWM
 from lucy_config_generator.schema import BOARD_CLASS_INTERNAL_ONLY
 from lucy_config_generator.schema import derive_ros2_hardware_name
@@ -176,6 +177,7 @@ def _sensors_for_board_firmware(
 def _actuator_joint_for_ros2(
     actuator: dict[str, Any],
     urdf_limits: dict[str, tuple[float, float]],
+    board_class: str = BOARD_CLASS_INTERNAL_ONLY,
 ) -> dict[str, Any]:
     """Copy actuator row and attach URDF command_interface min/max when present."""
     row = dict(actuator)
@@ -183,6 +185,12 @@ def _actuator_joint_for_ros2(
     if pair is not None:
         row['limit_lower_rad'] = pair[0]
         row['limit_upper_rad'] = pair[1]
+    if board_class == BOARD_CLASS_BUS_SERVO_ONLY:
+        # A bus servo is reached by id over a shared UART, so physical_pin is
+        # that id rather than a board pin. The plugin defaults joints to
+        # pwm_servo, so only bus boards carry these two params.
+        row['joint_type'] = 'bus_servo'
+        row['bus_id'] = actuator['physical_pin']
     return row
 
 
@@ -195,7 +203,7 @@ def _ros2_control_blocks(
     for bid in board_ids:
         bdef = data['boards'][bid]
         joints = [
-            _actuator_joint_for_ros2(a, urdf_limits)
+            _actuator_joint_for_ros2(a, urdf_limits, bdef['board_class'])
             for a in _actuators_for_board(data, bid, enabled_only=False)
         ]
         blocks.append(
@@ -464,6 +472,10 @@ def generate(
     if targets & {'firmware', 'all'} and not simulation_only:
         fw_boards = _resolve_board_ids(data, boards_filter)
         for bid in fw_boards:
+            # Bus-servo boards run the generic Rust firmware; there is no
+            # per-board C to render for them.
+            if data['boards'][bid]['board_class'] == BOARD_CLASS_BUS_SERVO_ONLY:
+                continue
             text = render_firmware_c(data, bid, env)
             out = output_dir / f'config_{bid}.c'
             out.write_text(text, encoding='utf-8')
@@ -517,6 +529,8 @@ def generate_from_xacro_string_for_tests(
     out: dict[str, str] = {}
     if targets & {'firmware', 'all'} and not simulation_only:
         for bid in firmware_boards:
+            if data['boards'][bid]['board_class'] == BOARD_CLASS_BUS_SERVO_ONLY:
+                continue
             out[f'config_{bid}.c'] = render_firmware_c(data, bid, env)
     if targets & {'ros2_control', 'all'}:
         out[names['ros2_control_xacro']] = render_ros2_control_xacro(

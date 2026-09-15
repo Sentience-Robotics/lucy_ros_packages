@@ -78,7 +78,17 @@ GENERATED_FILES_DEFAULTS: dict[str, str] = {
 # Firmware C template: single internal PWM stack vs internal + I2C (PCA) stack.
 BOARD_CLASS_INTERNAL_ONLY = 'internal_servo_only'
 BOARD_CLASS_INTERNAL_I2C_PWM = 'internal_servo_i2c_pwm'
-BOARD_CLASSES = frozenset({BOARD_CLASS_INTERNAL_ONLY, BOARD_CLASS_INTERNAL_I2C_PWM})
+# Smart bus servos daisy-chained on one UART, addressed by id rather than wired
+# to a pin each. The board runs the generic Rust firmware, so nothing about it
+# is generated into C.
+BOARD_CLASS_BUS_SERVO_ONLY = 'bus_servo_only'
+BOARD_CLASSES = frozenset(
+    {
+        BOARD_CLASS_INTERNAL_ONLY,
+        BOARD_CLASS_INTERNAL_I2C_PWM,
+        BOARD_CLASS_BUS_SERVO_ONLY,
+    }
+)
 
 _BOARD_ID_RE = re.compile(r'^rp2040_[a-z][a-z0-9_]*$')
 _TOPIC_RE = re.compile(r'^[a-z][a-z0-9_/]*$')

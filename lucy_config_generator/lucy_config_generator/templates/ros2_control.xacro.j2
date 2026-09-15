@@ -17,7 +17,13 @@
     </hardware>
 {% for j in block.joints %}
       <joint name="{{ j.urdf_joint }}">
+{% if j.joint_type is defined %}
+          <param name="type">{{ j.joint_type }}</param>
+{% endif %}
           <param name="virtual_pin">{{ j.virtual_pin }}</param>
+{% if j.bus_id is defined %}
+          <param name="bus_id">{{ j.bus_id }}</param>
+{% endif %}
           <param name="servo_type">{{ j.servo_type | replace('"', '') }}</param>
           <param name="offset_deg">{{ j.offset_deg }}</param>
           <param name="direction">{{ j.direction }}</param>

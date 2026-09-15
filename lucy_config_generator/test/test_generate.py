@@ -293,3 +293,51 @@ def test_generated_files_basenames_drive_output_keys():
     assert 'thais_ros2_control.xacro' in got
     assert 'thais_controllers.yaml' in got
     assert GENERATED_FILES_DEFAULTS['ros2_control_xacro'] not in got
+
+
+def _bus_servo_mapping() -> dict:
+    """Fixture mapping with its first board switched to smart bus servos."""
+    data = _load_mapping()
+    board_id = next(iter(data['boards']))
+    data['boards'][board_id]['board_class'] = 'bus_servo_only'
+    return data, board_id
+
+
+def test_schema_accepts_bus_servo_board_class():
+    data, _ = _bus_servo_mapping()
+    validate_hardware_yaml(data)
+
+
+def test_bus_servo_board_emits_type_and_bus_id():
+    """A bus joint is addressed by id on a shared UART, not by a board pin."""
+    data, board_id = _bus_servo_mapping()
+    out = generate_from_xacro_string_for_tests(
+        data, _fixture_urdf_xml(), targets={'ros2_control'}
+    )
+    xacro = out[resolve_generated_files(data)['ros2_control_xacro']]
+    assert '<param name="type">bus_servo</param>' in xacro
+
+    actuators = [a for a in data['actuators'] if a['board'] == board_id]
+    assert actuators, 'fixture board has no actuators'
+    for a in actuators:
+        assert f'<param name="bus_id">{a["physical_pin"]}</param>' in xacro
+
+
+def test_pwm_board_emits_neither_type_nor_bus_id():
+    """The plugin defaults joints to pwm_servo, so PWM output must not change."""
+    data = _load_mapping()
+    out = generate_from_xacro_string_for_tests(
+        data, _fixture_urdf_xml(), targets={'ros2_control'}
+    )
+    xacro = out[resolve_generated_files(data)['ros2_control_xacro']]
+    assert '<param name="type">' not in xacro
+    assert '<param name="bus_id">' not in xacro
+
+
+def test_bus_servo_board_generates_no_firmware_c():
+    """Bus boards run the generic Rust firmware; there is no per-board C."""
+    data, board_id = _bus_servo_mapping()
+    out = generate_from_xacro_string_for_tests(
+        data, _fixture_urdf_xml(), targets={'firmware'}
+    )
+    assert f'config_{board_id}.c' not in out
