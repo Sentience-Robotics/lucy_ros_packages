@@ -209,24 +209,6 @@ def _real_hardware_stack(context, *args, **kwargs):
     if real not in ('true', '1', 'yes'):
         return []
     out = []
-    # Camera and RealSense are off while the hardware bring-up is in flux. To
-    # restore either, re-import os and take its share directory back:
-    # cam_share = get_package_share_directory('camera_ros')
-    # out.append(
-    #     IncludeLaunchDescription(
-    #         PythonLaunchDescriptionSource(
-    #             os.path.join(cam_share, 'launch', 'camera.launch.py')
-    #         ),
-    #     )
-    # )
-    # lucy_share = get_package_share_directory('lucy_bringup')
-    # out.append(
-    #     IncludeLaunchDescription(
-    #         PythonLaunchDescriptionSource(
-    #             os.path.join(lucy_share, 'launch', 'realsense.launch.py')
-    #         ),
-    #     )
-    # )
     return out
 
 
@@ -296,9 +278,6 @@ def generate_launch_description():
         ),
     )
 
-    # Empty defaults: _resolve_robot_paths fills these from the selected
-    # robot_package at launch time, so robot_package:=<pkg> switches the URDF,
-    # base meshes and controllers together. Non-empty overrides are respected.
     urdf_path_arg = DeclareLaunchArgument(
         'urdf_path',
         default_value='',
@@ -357,9 +336,6 @@ def generate_launch_description():
         ]
     )
 
-    # Force value_type=str so ROS 2 launch does not try to YAML-parse
-    # the xacro output. The URDF starts with `<?xml ...>`, which the YAML
-    # loader rejects with "Unable to parse the value of parameter robot_description".
     robot_description = ParameterValue(
         Command(
             [
