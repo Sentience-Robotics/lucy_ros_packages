@@ -7,26 +7,41 @@ SRC = (Path(__file__).resolve().parents[1]
        / 'lucy_control_supervisor' / 'supervisor_node.py').read_text()
 
 
-def test_no_fixed_sleep_between_spawners():
-    # They contend for one lock file; overlapping converts it into 20s waits.
+def test_no_fixed_sleep_in_startup():
+    # Startup waits on the graph; a fixed sleep would be a guess at someone
+    # else's readiness.
     assert 'time.sleep(1.0)' not in SRC
 
 
-def test_controller_manager_is_waited_for_before_spawners():
+def test_controller_manager_is_waited_for_before_handing_off():
+    """Spawners run from each robot package's control.launch.py.
+
+    They contend for one lock file while waiting, so the manager has to answer
+    before they start or each one burns a full 20s lock attempt.
+    """
     assert '/controller_manager/list_controllers' in SRC
-    assert SRC.index('_service_available') < SRC.index('_start_spawners')
+    start_cm = SRC.index('def _start_cm')
+    next_method = SRC.index('def _restart_stack')
+    assert '_service_available' in SRC[start_cm:next_method]
 
 
 def test_robot_state_publisher_is_waited_for_by_topic():
     assert "count_publishers('/robot_description')" in SRC
 
 
-def test_urdf_params_file_is_unlinked():
-    assert 'os.unlink(params_file)' in SRC
+def test_urdf_params_file_is_unlinked_with_its_child():
+    """Cleanup is tied to the child, not to a graph condition.
+
+    robot_state_publisher reads the file while constructing. Removing it as soon
+    as /robot_description has a publisher deletes it under a still-starting child
+    whenever some other node is already publishing.
+    """
+    assert "cleanup_paths=(params_file,)" in SRC
+    assert 'os.unlink(path)' in SRC
 
 
 def test_waits_are_bounded():
-    assert 'READY_TIMEOUT_S' in SRC and 'SPAWNER_TIMEOUT_S' in SRC
+    assert 'READY_TIMEOUT_S' in SRC
 
 
 def test_discovery_settle_is_kept():

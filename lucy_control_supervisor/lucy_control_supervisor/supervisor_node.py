@@ -2,7 +2,9 @@
 #
 # SPDX-License-Identifier: GPL-3.0-only
 
-"""Manage RSP + ros2_control_node + spawners; restart on /lucy_control/restart."""
+"""Manage RSP + ros2_control_node; restart on /lucy_control/restart.
+
+Spawners are started by each robot package's control.launch.py, not here."""
 
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import List, Optional
+from typing import List
 
 import rclpy
 from rclpy.node import Node
@@ -28,7 +30,6 @@ from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 import yaml
 
-from lucy_control_supervisor.controllers_spawn import controllers_to_spawn
 
 
 _WINDOWS_EXEC_SUFFIXES = ('.exe', '.bat', '.cmd')
@@ -73,8 +74,11 @@ def node_argv(package: str, executable: str) -> list[str]:
 class _ManagedProc:
     name: str
     popen: subprocess.Popen
-    kind: str  # rsp | cm | spawner
+    kind: str  # rsp | cm
     stopping: bool = False  # set when we ask it to stop, so the exit is expected
+    # Temp files the child reads while starting. Removed when it is reaped rather
+    # than on a graph condition, which another node can satisfy first.
+    cleanup_paths: tuple = ()
 
 
 @dataclass
@@ -94,7 +98,6 @@ class ControlSupervisorNode(Node):
     TERMINATE_TIMEOUT_S = 10.0
     READY_TIMEOUT_S = 60.0
     CONTROL_READY_FILE = _control_ready_file()
-    SPAWNER_TIMEOUT_S = 60.0
     CHILD_LOG_TAIL = 50
     DISCOVERY_SETTLE_S = 2.0
     CONTROLLER_MANAGER_NODE = 'controller_manager'
@@ -175,23 +178,6 @@ class ControlSupervisorNode(Node):
             raise RuntimeError(f'xacro failed: {r.stderr or r.stdout}')
         return r.stdout
 
-    def _write_ready_marker(self, activated: int) -> None:
-        """Record "<controller_manager pid> <controllers activated>".
-
-        The pid makes a stale marker fail a liveness check; the count answers any
-        min_active threshold. Nothing is written when this supervisor does not own
-        a controller_manager (Gazebo runs it inside the simulator).
-        """
-        cm = next((c for c in self._children if c.kind == 'cm'), None)
-        if cm is None:
-            return
-        try:
-            # Trailing newline: `read` reports EOF without one, and a reader
-            # that treats that as failure would skip the marker entirely.
-            self.CONTROL_READY_FILE.write_text(f'{cm.popen.pid} {activated}\n')
-        except OSError as exc:
-            self.get_logger().warning(f'could not write {self.CONTROL_READY_FILE}: {exc}')
-
     def _clear_ready_marker(self) -> None:
         try:
             self.CONTROL_READY_FILE.unlink()
@@ -216,6 +202,12 @@ class ControlSupervisorNode(Node):
                 self.get_logger().warning(f'{child.name} ignored terminate; killing')
                 try:
                     child.popen.kill()
+                except OSError:
+                    pass
+        for child in self._children:
+            for path in child.cleanup_paths:
+                try:
+                    os.unlink(path)
                 except OSError:
                     pass
         self._children.clear()
@@ -278,7 +270,7 @@ class ControlSupervisorNode(Node):
             stderr=subprocess.STDOUT,
             env=os.environ.copy(),
         )
-        self._track('robot_state_publisher', popen, 'rsp')
+        self._track('robot_state_publisher', popen, 'rsp', cleanup_paths=(params_file,))
         ready = self._wait_for(
             lambda: self.count_publishers('/robot_description') > 0,
             self.READY_TIMEOUT_S,
@@ -288,20 +280,20 @@ class ControlSupervisorNode(Node):
                 'robot_state_publisher did not publish /robot_description within '
                 f'{self.READY_TIMEOUT_S:.0f}s'
             )
-        # Read during node construction, so it has served its purpose; it holds a
-        # full URDF and one leaks per start otherwise.
-        try:
-            os.unlink(params_file)
-        except OSError:
-            pass
 
-    def _track(self, name: str, popen: subprocess.Popen, kind: str) -> None:
+    def _track(
+        self,
+        name: str,
+        popen: subprocess.Popen,
+        kind: str,
+        cleanup_paths: tuple = (),
+    ) -> None:
         """Register a child and keep draining its output.
 
         Unread pipes stall a chatty child once the buffer fills. Lines go to
         debug; the tail is replayed at error level only if the child dies badly.
         """
-        child = _ManagedProc(name, popen, kind)
+        child = _ManagedProc(name, popen, kind, cleanup_paths=cleanup_paths)
         self._children.append(child)
         tail: deque = deque(maxlen=self.CHILD_LOG_TAIL)
 
@@ -354,37 +346,6 @@ class ControlSupervisorNode(Node):
                 f'{self.READY_TIMEOUT_S:.0f}s; spawners may block on the lock'
             )
 
-    def _start_spawners(self, cfg: _StackConfig) -> Optional[str]:
-        names = controllers_to_spawn(cfg.controllers_yaml)
-        if not names:
-            return 'no controllers found in controllers.yaml'
-        for name in names:
-            cmd = [
-                *node_argv('controller_manager', 'spawner'),
-                name,
-                '--switch-timeout',
-                '10',
-            ]
-            if cfg.use_gazebo_sim:
-                cmd.extend(['--ros-args', '-p', 'use_sim_time:=true'])
-            popen = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                env=os.environ.copy(),
-            )
-            self._track(f'spawner_{name}', popen, 'spawner')
-            # One at a time: they contend for the same lock file.
-            deadline = time.time() + self.SPAWNER_TIMEOUT_S
-            while popen.poll() is None and time.time() < deadline:
-                time.sleep(0.05)
-            if popen.poll() is None:
-                self.get_logger().warning(
-                    f'spawner for {name} still running after '
-                    f'{self.SPAWNER_TIMEOUT_S:.0f}s; continuing'
-                )
-        return None
-
     def _restart_stack(self) -> tuple[bool, str]:
         if self._restart_lock:
             return False, 'restart already in progress'
@@ -417,16 +378,11 @@ class ControlSupervisorNode(Node):
                 if not cfg.use_gazebo_sim:
                     self._start_cm(cfg)
 
-            err = self._start_spawners(cfg)
-            if err:
-                return False, err
-            self._write_ready_marker(len(controllers_to_spawn(cfg.controllers_yaml)))
-
             note = ''
             if cfg.use_gazebo_sim:
                 note = (
-                    ' Gazebo: spawners restarted; if URDF hardware topology changed, '
-                    'restart Gazebo (gz_ros2_control loads URDF at spawn).'
+                    ' Gazebo: if URDF hardware topology changed, restart Gazebo '
+                    '(gz_ros2_control loads URDF at spawn).'
                 )
             return True, f'control stack restarted.{note}'
         except Exception as e:
