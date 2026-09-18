@@ -24,8 +24,7 @@ joint_state_broadcaster:
 {% for c in controllers %}
 {{ c.name }}:
   ros__parameters:
-    # Position-only interfaces: open-loop interpolation (no velocity state).
-    open_loop_control: true
+    interpolate_from_desired_state: true
     allow_nonzero_velocity_at_trajectory_end: false
     joints:
 {% for j in c.joints %}
