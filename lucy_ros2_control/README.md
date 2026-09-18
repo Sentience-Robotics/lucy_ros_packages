@@ -25,12 +25,12 @@ source install/setup.bash
 `<param>` tags in robot-specific `*_ros2_control.xacro` generated from YAML):
 
 - `virtual_pin`
-- `offset_deg`
+- `offset_rad`
 - `direction`
 - `scale`
-- `servo_min_deg`
-- `servo_max_deg`
-- `servo_default_deg`
+- `servo_min_rad`
+- `servo_max_rad`
+- `servo_default_rad`
 
 Board-level params:
 
@@ -42,14 +42,17 @@ Joints without `virtual_pin` are treated as passive/unmapped for actuator output
 ## Conversion math
 
 Internal command/state interface uses joint-space radians. SHM/Modbus registers use
-**servo-space milliradians** (`rad × 1000`) at `virtual_pin * 2` (cmd) / `+1` (angle).
+**servo-space milliradians** (`rad × 1000`) at build-assigned register bases
+(historically `virtual_pin * 2` for PWM cmd / `+1` for angle).
 
 - default initialization:
-  - `joint_rad = deg_to_rad((servo_default_deg - offset_deg) * direction * scale)`
+  - `joint_rad = (servo_default_rad - offset_rad) * direction * scale`
 - write conversion:
-  - `servo_rad = actuator_command_to_servo_rad(...)`
+  - `servo_rad = actuator_command_to_servo_rad(...)` (joint → servo rad, clamped)
   - `angle_millirad = round(servo_rad * 1000)`
-  - firmware maps millirad → PWM using config min/max **degrees**
+  - firmware maps millirad → PWM using config min/max **milliradians**
+
+Degrees are not used in HI / firmware schemas (LCP may convert only for UI display).
 
 ## Robot-specific launch/config
 

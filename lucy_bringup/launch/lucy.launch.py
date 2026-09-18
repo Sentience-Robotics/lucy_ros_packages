@@ -37,7 +37,6 @@ Arguments:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -114,11 +113,12 @@ def _resolve_robot_paths(context):
     """
     Fill urdf_path / base_path / controllers_yaml from the selected robot_package.
 
-    Lets ``robot_package:=<pkg>`` switch the URDF, base meshes and controllers
-    together. Explicit ``urdf_path`` / ``base_path`` / ``controllers_yaml``
-    overrides (non-empty) are left untouched.
+    Reads ``config/control.launch.yaml`` (same helper as lucy_config_pipeline) so
+    ``robot_package:=so_arm101_urdf`` gets ``robot.urdf.xacro``, not a hard-coded
+    InMoov path. Explicit non-empty launch overrides are left untouched.
     """
     from launch.actions import SetLaunchConfiguration
+    from src.robot_paths import resolve_robot_description_paths
 
     robot_package = LaunchConfiguration('robot_package').perform(context).strip()
     if not robot_package:
@@ -126,12 +126,13 @@ def _resolve_robot_paths(context):
         return []
     share = get_package_share_directory(robot_package)
     robot_root = _infer_robot_source_root(robot_package, share)
+    urdf, base, controllers = resolve_robot_description_paths(robot_root)
 
     defaults = {
-        'urdf_path': str(robot_root / 'description' / 'urdf' / 'inmoov.urdf.xacro'),
+        'urdf_path': str(urdf),
         # Goes into a file:// URI in the xacro, so it must be posix.
-        'base_path': (robot_root / 'description').as_posix(),
-        'controllers_yaml': str(robot_root / 'config' / 'controllers.yaml'),
+        'base_path': base.as_posix(),
+        'controllers_yaml': str(controllers),
     }
     actions = []
     for key, default_value in defaults.items():
@@ -166,7 +167,8 @@ def _validate_lucy_launch(context):
 
 
 def _modbus_node_name(board_id: str) -> str:
-    """Logical ros2_control ``node_name`` for a board (full, untruncated).
+    """
+    Logical ros2_control ``node_name`` for a board (full, untruncated).
 
     Must match the hardware plugin ``node_name`` parameter. POSIX SHM/sem
     stems are truncated inside ``lucy_modbus_bridge.shm.shm_node_name_for``
@@ -174,7 +176,7 @@ def _modbus_node_name(board_id: str) -> str:
     """
     suffix = board_id
     if board_id.startswith('rp2040_'):
-        suffix = board_id[len('rp2040_') :]
+        suffix = board_id[len('rp2040_'):]
     return f'lucy_hardware_interface_{suffix}'
 
 
@@ -263,9 +265,11 @@ def generate_launch_description():
         'robot_package',
         default_value=_default_robot_package(),
         description=(
-            'Robot package: control.launch.py + config paths + RViz config + URDF. '
-            'Defaults to the only installed robot package when just one is present, '
-            'else inmoov_urdf.'
+            'Robot package: control.launch.py + config paths + RViz config + URDF + '
+            'lucy_config_pipeline. Set by the launcher robot modifier '
+            '(robot_package:=…). When unset, defaults to the only installed robot '
+            'package, else inmoov_urdf. Forwarded to web_ros_api / the pipeline '
+            '(those launches do not pick a robot on their own).'
         ),
     )
 
@@ -312,8 +316,8 @@ def generate_launch_description():
         'urdf_path',
         default_value='',
         description=(
-            'URDF/xacro entry. Empty -> '
-            '<robot_package>/description/urdf/inmoov.urdf.xacro'
+            'URDF/xacro entry. Empty -> path from '
+            '<robot_package>/config/control.launch.yaml'
         ),
     )
     base_path_arg = DeclareLaunchArgument(

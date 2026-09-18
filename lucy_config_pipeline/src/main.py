@@ -73,10 +73,18 @@ def main() -> None:
     rclpy.init()
 
     bootstrap = rclpy.create_node('lucy_config_pipeline_bootstrap')
-    bootstrap.declare_parameter('robot_package', 'thais_urdf')
+    bootstrap.declare_parameter('robot_package', '')
     bootstrap.declare_parameter('config_dir', '')
-    robot_package = bootstrap.get_parameter('robot_package').get_parameter_value().string_value
+    robot_package = bootstrap.get_parameter('robot_package').get_parameter_value().string_value.strip()
     config_dir = bootstrap.get_parameter('config_dir').get_parameter_value().string_value
+    if not robot_package:
+        bootstrap.destroy_node()
+        rclpy.shutdown()
+        raise SystemExit(
+            'lucy_config_pipeline: robot_package is required '
+            '(set by the launcher via lucy.launch → web_ros_api; '
+            'do not invent a default package here)'
+        )
     paths = _resolve_paths(robot_package, config_dir)
     bootstrap.destroy_node()
 

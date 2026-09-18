@@ -364,15 +364,25 @@ class PipelineActionServer(Node):
         fw_cfg_dir.mkdir(parents=True, exist_ok=True)
         for yfile in out_dir.glob('config_*.yaml'):
             shutil.copy2(yfile, fw_cfg_dir / yfile.name)
-        # Also keep a default config.yaml for single-board cargo builds.
+        # Also seed each board crate's config.yaml for local cargo builds.
         yaml_files = sorted(out_dir.glob('config_*.yaml'))
-        if yaml_files:
-            rp2040_cfg = (
+        boards_map = data.get('boards', {})
+        for yfile in yaml_files:
+            board_id = yfile.stem.removeprefix('config_')
+            board_def = boards_map.get(board_id)
+            if not isinstance(board_def, dict):
+                continue
+            try:
+                from lucy_config_generator.schema import resolve_firmware_crate
+
+                crate_rel = resolve_firmware_crate(board_def)
+            except Exception:
+                continue
+            crate_cfg = (
                 self._paths.workspace_src
                 / firmware_src_dir
-                / 'firmwares'
-                / 'rp2040'
+                / crate_rel
                 / 'config.yaml'
             )
-            rp2040_cfg.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(yaml_files[0], rp2040_cfg)
+            crate_cfg.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(yfile, crate_cfg)
