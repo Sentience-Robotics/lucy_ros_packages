@@ -235,7 +235,7 @@ def main() -> None:  # pragma: no cover
     robot_root = Path('.')
     urdf, base, controllers = resolve_robot_description_paths(robot_root)
     node = ConfigServicesNode(
-        robot_package='thais_urdf',
+        robot_package='',
         config_store=ConfigStore(Path('.')),
         urdf_xacro=urdf,
         base_path=base,
