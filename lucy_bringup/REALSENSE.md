@@ -214,7 +214,7 @@ ros2 service call /realsense/realsense2_camera/device_info realsense2_camera_msg
 The RealSense camera is integrated into the main Lucy launch file (`lucy.launch.py`):
 
 ```python
-# RealSense D435i Camera (replaces camera_ros)
+# RealSense D435i Camera
 realsense_launch = IncludeLaunchDescription(
     PythonLaunchDescriptionSource([
         PathJoinSubstitution([

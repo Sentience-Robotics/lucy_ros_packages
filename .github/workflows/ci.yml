@@ -26,13 +26,6 @@ jobs:
             python3-pytest-mock \
             python3-pytest-cov \
             python3-yaml \
-            python3-opencv \
-            gstreamer1.0-tools \
-            gstreamer1.0-plugins-base \
-            gstreamer1.0-plugins-good \
-            gstreamer1.0-plugins-bad \
-            gstreamer1.0-plugins-ugly \
-            v4l-utils \
             build-essential \
             cmake \
             git
@@ -42,7 +35,7 @@ jobs:
       - name: Workspace layout
         run: |
           mkdir -p ws/src
-          cp -r camera_ros lucy_bringup lucy_ros2_control lucy_config_generator \
+          cp -r lucy_bringup lucy_ros2_control lucy_config_generator \
             lucy_modbus_bridge lucy_msgs lucy_config_pipeline ws/src/
 
       # Do not `rm -rf /var/lib/apt/lists/*` before this: rosdep/apt need indexes for packages.ros.org.
@@ -62,7 +55,7 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           colcon build --symlink-install \
-            --packages-select camera_ros lucy_bringup lucy_ros2_control lucy_config_generator \
+            --packages-select lucy_bringup lucy_ros2_control lucy_config_generator \
               lucy_modbus_bridge lucy_msgs lucy_config_pipeline \
             --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
 
@@ -73,7 +66,7 @@ jobs:
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           colcon test \
-            --packages-select camera_ros lucy_bringup lucy_ros2_control lucy_config_generator \
+            --packages-select lucy_bringup lucy_ros2_control lucy_config_generator \
               lucy_modbus_bridge lucy_config_pipeline \
             --event-handlers console_direct+ \
             --pytest-args -vv --tb=short
@@ -95,13 +88,6 @@ jobs:
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           mkdir -p build/coverage_reports
-          # camera_ros — production code under scripts/
-          python3 -m pytest src/camera_ros/test/ \
-            --cov=src/camera_ros/scripts \
-            --cov-report=xml:build/coverage_reports/camera_ros.xml \
-            --cov-report=html:build/coverage_reports/html_camera_ros \
-            --cov-report=term-missing \
-            --cov-branch
           # lucy_bringup — launch/*.py (py_compile tests do not execute module bodies; expect low %)
           python3 -m pytest src/lucy_bringup/test/ \
             --cov=src/lucy_bringup/launch \
@@ -122,7 +108,7 @@ jobs:
         if: success()
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ws/build/coverage_reports/camera_ros.xml,ws/build/coverage_reports/lucy_bringup.xml,ws/build/coverage_reports/lucy_config_generator.xml
+          files: ws/build/coverage_reports/lucy_bringup.xml,ws/build/coverage_reports/lucy_config_generator.xml
           flags: lucy_ros_packages
           name: lucy_ros_packages
           fail_ci_if_error: false

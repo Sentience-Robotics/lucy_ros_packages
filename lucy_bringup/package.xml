@@ -13,7 +13,6 @@
   <exec_depend>lucy_ros2_control</exec_depend>
   <exec_depend>lucy_modbus_bridge</exec_depend>
   <exec_depend>rosbridge_server</exec_depend>
-  <exec_depend>camera_ros</exec_depend>
   <exec_depend>audio_common</exec_depend>
   <exec_depend>realsense2_camera</exec_depend>
   <exec_depend>lucy_config_pipeline</exec_depend>
