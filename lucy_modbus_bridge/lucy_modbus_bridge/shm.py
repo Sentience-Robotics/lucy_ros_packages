@@ -1,4 +1,5 @@
-"""POSIX SHM helpers matching LucySystemHardware layout (Unix only).
+"""
+POSIX SHM helpers matching LucySystemHardware layout (Unix only).
 
 Layout contract (lucy_ros2_control ``RegisterHeader`` / ``SharedRegisters``):
 
@@ -35,7 +36,8 @@ _MAX_SHM_NAME = 31
 
 
 def shm_node_name_for(node_name: str) -> str:
-    """Mirror ``lucy_ros2_control`` anonymous ``shm_node_name_for``.
+    """
+    Mirror ``lucy_ros2_control`` anonymous ``shm_node_name_for``.
 
     Sanitises to ``[A-Za-z0-9_.-]``, then keeps the **tail** so it fits
     ``/<name>.lucy_reg_header`` under a 31-char POSIX name cap
@@ -84,7 +86,8 @@ def open_board_shm(
     timeout_sec: float = 60.0,
     poll_sec: float = 0.25,
 ) -> ShmMaps:
-    """Open SHM segments created by LucySystemHardware for ``node_name``.
+    """
+    Open SHM segments created by LucySystemHardware for ``node_name``.
 
     ``node_name`` is the logical ros2_control hardware parameter; truncation
     to the POSIX shm stem is applied here the same way as in C++.
