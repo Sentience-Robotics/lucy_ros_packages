@@ -78,11 +78,19 @@ def _libc():
     return ctypes.CDLL(path, use_errno=True)
 
 
-def open_board_shm(node_name: str) -> ShmMaps:
+def open_board_shm(
+    node_name: str,
+    *,
+    timeout_sec: float = 60.0,
+    poll_sec: float = 0.25,
+) -> ShmMaps:
     """Open SHM segments created by LucySystemHardware for ``node_name``.
 
     ``node_name`` is the logical ros2_control hardware parameter; truncation
     to the POSIX shm stem is applied here the same way as in C++.
+
+    Retries until ``timeout_sec`` because the bridge often starts before
+    ``controller_manager`` / the hardware plugin has created the segments.
     """
     if os.name == 'nt':
         raise NotImplementedError(
@@ -90,11 +98,17 @@ def open_board_shm(node_name: str) -> ShmMaps:
             'migrate LucySystemHardware to Boost.Interprocess first'
         )
 
+    import errno
+    import time
+
     libc = _libc()
     libc.shm_open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_uint]
     libc.shm_open.restype = ctypes.c_int
-    libc.sem_open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_uint, ctypes.c_uint]
-    libc.sem_open.restype = ctypes.c_void_p
+    # Attach-only (no O_CREAT): POSIX 2-arg form. Setting 4-arg argtypes makes
+    # ctypes reject ``sem_open(name, 0)`` with TypeError on Linux.
+    sem_open = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int)(
+        ('sem_open', libc)
+    )
     libc.sem_wait.argtypes = [ctypes.c_void_p]
     libc.sem_wait.restype = ctypes.c_int
     libc.sem_post.argtypes = [ctypes.c_void_p]
@@ -104,9 +118,19 @@ def open_board_shm(node_name: str) -> ShmMaps:
     reg_name, header_name, sem_name = shm_object_names(node_name)
 
     O_RDWR = os.O_RDWR
-    reg_fd = libc.shm_open(reg_name.encode(), O_RDWR, 0o666)
-    if reg_fd < 0:
-        raise OSError(ctypes.get_errno(), f'shm_open failed for {reg_name}')
+    deadline = time.monotonic() + max(0.0, float(timeout_sec))
+    last_err: OSError | None = None
+
+    while True:
+        reg_fd = libc.shm_open(reg_name.encode(), O_RDWR, 0o666)
+        if reg_fd >= 0:
+            break
+        err = ctypes.get_errno()
+        last_err = OSError(err, f'shm_open failed for {reg_name}')
+        if err not in (errno.ENOENT, errno.EACCES) or time.monotonic() >= deadline:
+            raise last_err
+        time.sleep(max(0.05, float(poll_sec)))
+
     hdr_fd = libc.shm_open(header_name.encode(), O_RDWR, 0o666)
     if hdr_fd < 0:
         os.close(reg_fd)
@@ -117,10 +141,19 @@ def open_board_shm(node_name: str) -> ShmMaps:
     os.close(reg_fd)
     os.close(hdr_fd)
 
-    # Attach to an existing semaphore (do not create).
-    sem = libc.sem_open(sem_name.encode(), 0)
-    if not sem or sem == ctypes.c_void_p(-1).value:
-        raise OSError(ctypes.get_errno(), f'sem_open failed for {sem_name}')
+    # Attach to an existing semaphore (do not create). Retry briefly — HI may
+    # create the semaphore just after the SHM objects.
+    SEM_FAILED = ctypes.c_void_p(-1).value
+    sem = None
+    while True:
+        sem = sem_open(sem_name.encode(), 0)
+        if sem and sem != SEM_FAILED:
+            break
+        err = ctypes.get_errno()
+        last_err = OSError(err, f'sem_open failed for {sem_name}')
+        if time.monotonic() >= deadline:
+            raise last_err
+        time.sleep(max(0.05, float(poll_sec)))
 
     return ShmMaps(
         reg_name, header_name, sem_name, shm, reg_mm, header_mm, sem
