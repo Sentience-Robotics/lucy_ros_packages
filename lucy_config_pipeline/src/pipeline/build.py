@@ -45,7 +45,7 @@ def run_build_phase(
     cargo = shutil.which('cargo')
     if cargo is None:
         raise RuntimeError(
-            "cargo not found; run `pixi run firmware-setup` to install the Rust toolchain"
+            'cargo not found; run `pixi run firmware-setup` to install the Rust toolchain'
         )
 
     boards_map = data.get('boards', {})
@@ -137,7 +137,7 @@ def _elf_to_uf2(elf: Path, uf2: Path, *, timeout_seconds: int) -> None:
     converter = shutil.which('elf2uf2-rs')
     if converter is None:
         raise RuntimeError(
-            "elf2uf2-rs not found; run `pixi run firmware-setup` to install it"
+            'elf2uf2-rs not found; run `pixi run firmware-setup` to install it'
         )
     uf2.parent.mkdir(parents=True, exist_ok=True)
     # elf2uf2-rs writes alongside ELF by default; copy/rename to expected path.
