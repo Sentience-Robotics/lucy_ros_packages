@@ -59,7 +59,9 @@ def pipeline_paths(tmp_path: Path) -> PipelinePaths:
     importlib.util.find_spec('rclpy') is None,
     reason='rclpy not importable (run inside Pixi env with ROS feature)',
 )
-def test_hardware_activate_aborts_when_toolchain_missing(pipeline_paths: PipelinePaths):
+def test_hardware_activate_aborts_when_toolchain_missing(
+    pipeline_paths: PipelinePaths, rclpy_init_shutdown
+):
     data = yaml.safe_load(_FIXTURE.read_text(encoding='utf-8'))
     config_yaml = yaml.dump(data)
 
@@ -67,38 +69,42 @@ def test_hardware_activate_aborts_when_toolchain_missing(pipeline_paths: Pipelin
     store.get_active_name.return_value = 'default'
 
     node = PipelineActionServer(paths=pipeline_paths, config_store=store)
+    try:
+        goal_handle = MagicMock()
+        goal_handle.request.mapping_file = ''
+        goal_handle.request.boards_to_flash = []
+        goal_handle.request.dry_run = False
+        goal_handle.request.build_only = False
+        goal_handle.request.simulation_only = False
+        goal_handle.is_cancel_requested = False
 
-    goal_handle = MagicMock()
-    goal_handle.request.mapping_file = ''
-    goal_handle.request.boards_to_flash = []
-    goal_handle.request.dry_run = False
-    goal_handle.request.build_only = False
-    goal_handle.request.simulation_only = False
-    goal_handle.is_cancel_requested = False
+        with (
+            patch(
+                'src.pipeline.action_server.resolve_mapping_input',
+                return_value=('default', config_yaml),
+            ),
+            patch('src.pipeline.action_server.validate_schema', return_value=data),
+            patch('src.pipeline.action_server.urdf_crosscheck') as cross,
+            patch('src.pipeline.action_server.generate') as gen,
+            patch(
+                'src.pipeline.action_server.require_firmware_toolchain',
+                side_effect=RuntimeError(
+                    'Firmware toolchain not ready. Run: pixi run firmware-setup'
+                ),
+            ),
+            patch('src.pipeline.action_server.run_build_phase') as build,
+            patch('src.pipeline.action_server.run_flash_phase') as flash,
+        ):
+            cross.return_value = MagicMock(errors=[])
 
-    with (
-        patch(
-            'src.pipeline.action_server.resolve_mapping_input',
-            return_value=('default', config_yaml),
-        ),
-        patch('src.pipeline.action_server.validate_schema', return_value=data),
-        patch('src.pipeline.action_server.urdf_crosscheck') as cross,
-        patch('src.pipeline.action_server.generate') as gen,
-        patch(
-            'src.pipeline.action_server.require_firmware_toolchain',
-            side_effect=RuntimeError('Firmware toolchain not ready. Run: pixi run firmware-setup'),
-        ),
-        patch('src.pipeline.action_server.run_build_phase') as build,
-        patch('src.pipeline.action_server.run_flash_phase') as flash,
-    ):
-        cross.return_value = MagicMock(errors=[])
+            result = node._execute(goal_handle)
 
-        result = node._execute(goal_handle)
-
-    assert result.success is False
-    assert result.message == 'firmware toolchain not ready'
-    assert any('firmware-setup' in e for e in result.errors)
-    build.assert_not_called()
-    flash.assert_not_called()
-    gen.assert_not_called()
-    goal_handle.abort.assert_called()
+        assert result.success is False
+        assert result.message == 'firmware toolchain not ready'
+        assert any('firmware-setup' in e for e in result.errors)
+        build.assert_not_called()
+        flash.assert_not_called()
+        gen.assert_not_called()
+        goal_handle.abort.assert_called()
+    finally:
+        node.destroy_node()
