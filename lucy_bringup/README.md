@@ -8,7 +8,7 @@ System launch files and scripts for the Lucy robot on NVIDIA Jetson AGX Orin.
 
 | Argument | Default | When true / meaning |
 |----------|---------|---------------------|
-| **`real`** | `true` | `lucy_modbus_bridge` per board with `serial_id`; RealSense remains opt-in via `realsense.launch.py` |
+| **`real`** | `true` | `lucy_modbus_bridge` per board with `serial_id`, USB webcam (**`camera_ros`**), RealSense |
 | **`rviz`** | `false` | RViz2 with **`robot_package`** RViz config (`use_sim_time:=false`). If **`gazebo:=true`**, forwarded as **`start_rviz`** to **`thais_urdf/gazebo.launch.py`** (no duplicate RViz). |
 | **`gazebo`** | `false` | Include **`thais_urdf/gazebo.launch.py`**. **Requires `real:=false`** or launch aborts with **`RuntimeError`**. |
 | **`robot_package`** | `thais_urdf` | **`control.launch.py`**, config paths, RViz config share |

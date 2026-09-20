@@ -12,11 +12,12 @@ Conventions follow common packaging practice ([REP-149](https://www.ros.org/reps
 
 | Package | Responsibility |
 |---------|----------------|
-| `lucy_bringup` | Jetson **system bringup**: `lucy_modbus_bridge`, `rosbridge_server`, RealSense, control include. |
+| `lucy_bringup` | Jetson **system bringup**: `lucy_modbus_bridge`, `rosbridge_server`, `camera_ros`, RealSense, control include. |
 | `lucy_ros2_control` | **Hardware** `ros2_control`: `LucySystemHardware` plugin (SHM register table). |
 | `lucy_modbus_bridge` | SHM → Modbus RTU over USB serial (one node per board). |
 | `lucy_config_generator` | Hardware YAML → RP2040 `config_*.yaml`, `ros2_control` xacro, `controllers.yaml`. |
 | `lucy_config_pipeline` | Config store + `ConfigurePipeline` (validate → generate → Cargo build → flash → reload). |
+| `camera_ros` | MJPEG → `sensor_msgs/msg/CompressedImage`; GStreamer pipeline; pytest. |
 
 ---
 
@@ -32,7 +33,7 @@ lucy_ros_packages/
 ├── lucy_modbus_bridge/
 ├── lucy_config_generator/
 ├── lucy_config_pipeline/
-└── lucy_msgs/
+└── camera_ros/
 ```
 
 ---
@@ -43,7 +44,7 @@ lucy_ros_packages/
 cd lucy_ws   # or your colcon workspace root
 source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install \
- --packages-select lucy_bringup lucy_ros2_control lucy_config_generator
+  --packages-select lucy_bringup lucy_ros2_control lucy_config_generator camera_ros
 source install/setup.bash
 ```
 
@@ -65,7 +66,7 @@ source install/setup.bash
 | **Launch** | `ros2 launch lucy_bringup lucy.launch.py` |
 | **Args** | `device0`, `device1` (default `/dev/ttyACM0`, `/dev/ttyACM1`); audio args declared but audio nodes are **commented out** in `lucy.launch.py`; RealSense via `realsense.launch.py`. |
 | **Scripts** | `system_scripts/*.sh` → installed under `lib/lucy_bringup`. |
-| **Runtime deps** | `lucy_modbus_bridge`, `lucy_ros2_control`, `rosbridge_server`, `audio_common`, `realsense2_camera`, `lucy_config_pipeline`, `launch`, `launch_ros`. |
+| **Runtime deps** | `lucy_modbus_bridge`, `lucy_ros2_control`, `rosbridge_server`, `camera_ros`, `audio_common`, `realsense2_camera`, `lucy_config_pipeline`, `launch`, `launch_ros`. |
 
 **Developers**
 
@@ -87,6 +88,13 @@ source install/setup.bash
 2. Update **`thais_urdf`** ros2_control xacro in the **same change set** (or coordinated PRs).
 3. Align any external UI / teleop joint lists (e.g. control panel config).
 
+### `camera_ros`
+
+| Item | Detail |
+|------|--------|
+| **Launch** | `ros2 launch camera_ros camera.launch.py` (`fps`, `device`, USB ids, …). |
+| **Tests** | `colcon test --packages-select camera_ros` with `BUILD_TESTING=ON`. |
+
 ### `lucy_config_generator`
 
 | Item | Detail |
@@ -100,10 +108,10 @@ source install/setup.bash
 
 `.github/workflows/ci.yml` runs in `osrf/ros:jazzy-desktop` on **pull_request** and on **push** to **`main` / `master` / `dev`** only (avoids duplicate runs when a PR branch is pushed):
 
-- **`rosdep install --from-paths src`** for `lucy_bringup`, `lucy_ros2_control`, `lucy_config_generator`
+- **`rosdep install --from-paths src`** for `camera_ros`, `lucy_bringup`, `lucy_ros2_control`, `lucy_config_generator`
 - **`colcon build`** with `BUILD_TESTING=ON`
-- **`colcon test`** — ament linters pytests, **`lucy_bringup`** launch `py_compile` tests, **`lucy_ros2_control`** YAML tests, **`lucy_config_generator`** golden tests
-- **`pytest-cov`** — `lucy_bringup` (`launch/`), `lucy_ros2_control` (`test/`), `lucy_config_generator` (`lucy_config_generator/`) → Cobertura XML + HTML under `ws/build/coverage_reports/`; **Codecov** flag `lucy_ros_packages` (optional **`CODECOV_TOKEN`**)
+- **`colcon test`** — ament linters, `camera_ros` pytests, **`lucy_bringup`** launch `py_compile` tests, **`lucy_ros2_control`** YAML tests, **`lucy_config_generator`** golden tests
+- **`pytest-cov`** — `camera_ros` (`scripts/`), `lucy_bringup` (`launch/`), `lucy_ros2_control` (`test/`), `lucy_config_generator` (`lucy_config_generator/`) → Cobertura XML + HTML under `ws/build/coverage_reports/`; **Codecov** flag `lucy_ros_packages` (optional **`CODECOV_TOKEN`**)
 
 Local commands: **README.md** → *Tests and coverage (local)*.
 
@@ -124,5 +132,6 @@ Local commands: **README.md** → *Tests and coverage (local)*.
 |------|---------|
 | Full Jetson stack | `ros2 launch lucy_bringup lucy.launch.py` |
 | Control stack only | `ros2 launch lucy_ros2_control control.launch.py` (requires **`thais_urdf`** installed in overlay — provides default URDF share) |
+| USB camera | `ros2 launch camera_ros camera.launch.py` |
 | RViz / Gazebo + web panel | **`lucy_bringup`** **`lucy.launch.py`** with **`rviz`**, **`gazebo`**, **`real`** (see **`lucy_ws/README.md`**) |
 | URDF + RViz/Gazebo without web | **`thais_urdf`** **`control.launch.py`** + **`rviz_standalone.launch.py`**, or **`gazebo.launch.py`** |
